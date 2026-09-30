@@ -80,7 +80,27 @@ tooling" in the sense the project itself uses those words (see
    series duplicates/unused patches, GN flag sort/dupes, downloads.ini
    schema): exit code 0, no warnings, confirmed via subprocess capture.
 
-4. **Repeatable build pipeline**: `tools/build-adado-browser.sh`, a direct
+4. **Product branding (name/icon), verified against REAL chromium source,
+   not guessed**: `patches/extra/adado-branding/product-branding.patch`.
+   Verified by doing a disk-cheap `git clone --filter=blob:none
+   --sparse` of the real `https://chromium.googlesource.com/chromium/src.git`
+   (sparse-checkout narrowed to `chrome/app`, `chrome/browser`,
+   `chrome/installer` — 324MB, not 30GB, fits this sandbox), editing
+   `chrome/app/theme/chromium/BRANDING` (PRODUCT_FULLNAME/SHORTNAME ->
+   "AdaDo Browser", COMPANY -> "Diginoz Pty Ltd"/"AdaDo", MAC_BUNDLE_ID ->
+   `au.com.diginoz.adadobrowser`) and `chrome/app/theme/chromium/product_logo.svg`
+   (AdaDo green `#00A86B` mark, same brand color as
+   `../adado-browser/policies/managed_policies.json`'s `BrowserThemeColor`,
+   replacing the Chromium pinwheel), then confirming `git status`/`git diff`
+   in that checkout shows exactly this patch applied cleanly against real
+   upstream blobs (index hashes `f8363d5b`→`a722ea81`,
+   `5e0b254b`→`071cb13b` are real chromium.googlesource.com object IDs, not
+   invented). That checkout is committed separately (own repo, own history)
+   — see `adado-engine/adado-browser-671-fork.md` for its path and commit
+   hash. `devutils/validate_config.py` (item 3 above) re-ran clean after
+   adding this second patch to the series too.
+
+5. **Repeatable build pipeline**: `tools/build-adado-browser.sh`, a direct
    transcription of `docs/building.md`'s real 6-step recipe (retrieve/unpack
    pinned Chromium source, prune, apply patches, domain-substitute, gn gen,
    ninja build), parameterized for `$BUILD_ROOT`/`$JOBS`, `bash -n` syntax
@@ -107,16 +127,28 @@ ticket asks for as the starting bar. Until then, this fork + branding patch
 not a rebuild of the already-done 644/653/665/805/814/815 policy-compose
 work, and not a claim that a binary was produced when it wasn't.
 
-## Also identified, not yet patched (needs real source to author safely)
+## Repo-hosting decision needed from Dan (found this pass, not guessed at)
 
-Product-name/icon/about-page branding (ticket also asks for "name 'AdaDo
-Browser', AdaDo icon/splash, about page") requires patching Chromium's
-`chrome/app/theme/<brand>/BRANDING` file + `branding_path_component` GN
-default + new icon assets under `chrome/app/theme/<brand>/`. This is the
-real, standard mechanism (used by every other rebranded Chromium fork), but
-authoring the exact diff hunks against files we don't have checked out
-would be guessing at content we can't apply-test — unlike the search-engine
-patch above, which we could reconstruct and self-test from another patch
-already in this exact repo. Left as an explicit next step once a real
-Chromium checkout exists on a properly provisioned build host, rather than
-committing an unverified patch.
+While researching where to host this fork's `origin` remote, found an
+existing `github.com/diginoz-com-au/adado-browser` repo already in use for
+**unrelated** content (a Playwright/FastAPI web-automation server, per its
+one commit "Initial adado-browser: Playwright FastAPI server for web
+automation") — a name collision, not an available slot. Filing this as
+part of the same youdo.py grant request rather than silently pushing over
+it or silently picking a different name myself: Dan needs to say whether
+`diginoz-com-au/adado-browser` gets renamed/repurposed, or whether this
+fork should get a different repo name (e.g. `adado-browser-chromium`).
+Until that's decided, `origin` stays unset on this fork (see above).
+
+## What's left (v1.1/v2, not this pass)
+
+- About page (`chrome://about`, `chrome://version` strings) — same BRANDING
+  file drives most of it already; a full about-page re-skin is a v2 nicety,
+  not blocking the "own build" thesis.
+- Homepage/AM baked in at source level (currently only in the runtime
+  policy layer, `../adado-browser/policies/managed_policies.json`
+  `HomepageLocation`) — same pattern as the search-engine patch could bake
+  this in too; not done this pass to keep the diff reviewable and focused
+  on the two asks (search + branding) explicitly named first in the ticket.
+- The actual `tools/build-adado-browser.sh` run to completion, blocked on
+  the build-host/disk decision above.
