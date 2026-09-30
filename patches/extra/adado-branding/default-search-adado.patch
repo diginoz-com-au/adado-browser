@@ -1,0 +1,18 @@
+--- a/third_party/search_engines_data/resources/definitions/prepopulated_engines.json
++++ b/third_party/search_engines_data/resources/definitions/prepopulated_engines.json
+@@ -172,11 +172,12 @@
+     },
+
+     "google": {
+-      "name": "No Search",
+-      "keyword": "nosearch",
++      "name": "AdaDo Search",
++      "keyword": "adado",
+       "favicon_url": "about:blank",
+-      "search_url": "http://{searchTerms}",
++      "search_url": "http://localhost:6475/search?q={searchTerms}",
++      "suggest_url": "http://localhost:6475/suggest?q={searchTerms}",
+       "new_tab_url": "about:blank",
+       "type": "SEARCH_ENGINE_GOOGLE",
+       "preconnect_to_search_url" : "ALLOWED",
+       "prefetch_likely_navigations" : "ALLOWED",
