@@ -37,19 +37,23 @@ mkdir -p "$BUILD_ROOT/download_cache"
 "$REPO_ROOT/utils/downloads.py" retrieve -c "$BUILD_ROOT/download_cache" -i "$REPO_ROOT/downloads.ini"
 "$REPO_ROOT/utils/downloads.py" unpack -c "$BUILD_ROOT/download_cache" -i "$REPO_ROOT/downloads.ini" -- "$BUILD_ROOT/src"
 
-# 2026-10-25 (Claude): 5th real build failure -- moved here from after
-# domain substitution. update_rust.py's own download URL points at
-# Google's real CDN; domain_substitution.py (step 4) rewrites that exact
-# string into a de-Googled placeholder throughout the source tree, so
-# running this AFTER substitution silently broke the download. Build-time
-# toolchain fetches must happen on the real, unsubstituted tree.
+# 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
+"$REPO_ROOT/utils/prune_binaries.py" "$BUILD_ROOT/src" "$REPO_ROOT/pruning.list"
+
+# 2026-10-25 (Claude): 6th/7th real build failure -- confirmed via direct
+# ls that update_rust.py's download genuinely succeeds and the real
+# toolchain lands at third_party/rust-toolchain/, but it was gone again by
+# gn gen. Root cause: prune_binaries.py (step 2) doesn't just remove the
+# paths literally listed in pruning.list -- it generically sweeps away
+# ANY prebuilt-binary-looking directory it finds that it doesn't
+# recognize, which deleted the freshly-fetched rust toolchain when the
+# fetch ran before pruning. And domain_substitution.py (step 4) breaks
+# the fetch's own download URL if run before it (5th failure). The only
+# safe window is between the two: after prune, before domain substitution.
 ( cd "$BUILD_ROOT/src" && python3 tools/rust/update_rust.py ) || echo "update_rust.py exited non-zero (continuing to inspect)"
 echo "[adado-browser] third_party/rust-toolchain/ contents after update_rust.py:"
 ls -la "$BUILD_ROOT/src/third_party/rust-toolchain/" 2>&1 || echo "  (directory does not exist)"
 find "$BUILD_ROOT/src/third_party/rust-toolchain/" -name VERSION 2>&1 || true
-
-# 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
-"$REPO_ROOT/utils/prune_binaries.py" "$BUILD_ROOT/src" "$REPO_ROOT/pruning.list"
 
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
