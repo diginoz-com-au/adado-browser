@@ -71,6 +71,22 @@ for d in "$BUILD_ROOT/src/third_party"/*/; do
   fi
 done
 
+# 2026-10-25 (Claude): 14th real failure -- a handful of third_party deps
+# (devtools-frontend among them) use a one-level-deeper convention:
+# third_party/<name>/src is the REAL git-type DEPS entry, with <name>/
+# itself just a wrapper folder (README.chromium etc). The blanket loop
+# above only reaches third_party/*/ (one level), so this nested src/
+# never got its own .git even though its wrapper parent did. Second,
+# narrowly-targeted pass for exactly that convention -- cheap (only a
+# few real matches) rather than an expensive full-depth sweep of every
+# third_party subdirectory.
+for d in "$BUILD_ROOT/src/third_party"/*/src/; do
+  if [ -d "$d" ] && [ ! -e "$d/.git" ]; then
+    ( cd "$d" && git init -q && git add -A -- . 2>/dev/null && \
+      git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" --allow-empty 2>/dev/null ) || true
+  fi
+done
+
 # 2026-10-25 (Claude): 12th real failure -- target_os=linux didn't gate
 # this one out after all (an android_webview orderfile -- pure PGO
 # binary-layout data, not functionally required; chrome_pgo_phase=0 is
