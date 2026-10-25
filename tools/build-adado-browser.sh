@@ -75,6 +75,16 @@ find "$BUILD_ROOT/src/third_party/rust-toolchain/" -name VERSION 2>&1 || true
 # explicitly before gn gen.
 "$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
 
+# 2026-10-25 (Claude): 8th real build failure -- gn gen's own build-time
+# helper scripts (e.g. build/toolchain/get_concurrent_links.py) call a
+# pinned third_party/cpython3/host/bin/python3 that the manual recipe
+# never fetches either. It's only used for basic system introspection
+# here (counting CPUs/memory for parallel link jobs), not anything
+# version-sensitive -- point it at the system python3 instead of
+# fetching Chromium's full pinned CPython via CIPD.
+mkdir -p "$BUILD_ROOT/src/third_party/cpython3/host/bin"
+ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/python3"
+
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"
 cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
