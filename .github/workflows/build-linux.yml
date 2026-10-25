@@ -57,6 +57,16 @@ jobs:
       # (GCC's standard library) unless told otherwise, and that lookup
       # was failing here. Forcing clang's own libc++-18 explicitly via
       # CXXFLAGS/LDFLAGS sidesteps the ambiguity entirely.
+      # 2026-10-25 (Claude): caching the downloaded pinned Chromium source
+      # across retries -- the single biggest fixed cost per iteration while
+      # we're still finding real toolchain/hook gaps, not worth re-paying
+      # every time.
+      - name: Cache downloaded Chromium source
+        uses: actions/cache@v4
+        with:
+          path: build/work/download_cache
+          key: chromium-src-${{ hashFiles('downloads.ini') }}
+
       - name: Run the real build pipeline (ADADO-671)
         env:
           BUILD_ROOT: ${{ github.workspace }}/build/work

@@ -60,6 +60,12 @@ mkdir -p "$BUILD_ROOT/download_cache"
 # explicitly before gn gen.
 "$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
 
+# 2026-10-25 (Claude): fourth real build failure -- gn gen also needs
+# third_party/rust-toolchain/VERSION, fetched by the normal gclient hooks
+# flow but not by this manual recipe. Fetch it the same real way.
+python3 "$BUILD_ROOT/src/tools/rust/update_rust.py" || \
+  python3 "$BUILD_ROOT/src/tools/clang/scripts/update.py" --package=rust-toolchain || true
+
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"
 cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
