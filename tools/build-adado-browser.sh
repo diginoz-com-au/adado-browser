@@ -48,6 +48,14 @@ mkdir -p "$BUILD_ROOT/download_cache"
 # a full `gclient sync` (which would re-clone all of chromium/src's git
 # history) -- `managed: False` lets it operate on the already-unpacked
 # tree from downloads.py above.
+# 2026-10-25 (Claude): 10th real failure -- gclient internally runs
+# `git diff ... -G 'Subproject commit'` to check for submodule changes,
+# even with managed: False. The downloads.py-unpacked tree has no .git
+# at all ("Not a git repository"). Doesn't need real chromium history --
+# just needs SOME git state so that internal diff is empty, not an error.
+( cd "$BUILD_ROOT/src" && git init -q && git add -A && \
+  git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" )
+
 cat > "$BUILD_ROOT/.gclient" << GCLIENT_EOF
 solutions = [
   {
