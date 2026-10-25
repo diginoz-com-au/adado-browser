@@ -56,6 +56,10 @@ mkdir -p "$BUILD_ROOT/download_cache"
 ( cd "$BUILD_ROOT/src" && git init -q && git add -A && \
   git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" )
 
+# 2026-10-25 (Claude): 11th real failure -- gclient tried to resolve an
+# Android-only CIPD dependency (android_webview's orderfile) even though
+# this is a Linux desktop build. target_os scopes DEPS's OS-conditional
+# entries correctly, same as a real Linux Chromium checkout would set.
 cat > "$BUILD_ROOT/.gclient" << GCLIENT_EOF
 solutions = [
   {
@@ -65,6 +69,7 @@ solutions = [
     "managed": False,
   },
 ]
+target_os = ["linux"]
 GCLIENT_EOF
 ( cd "$BUILD_ROOT" && gclient runhooks )
 
