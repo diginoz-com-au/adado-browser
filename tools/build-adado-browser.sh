@@ -37,6 +37,14 @@ mkdir -p "$BUILD_ROOT/download_cache"
 "$REPO_ROOT/utils/downloads.py" retrieve -c "$BUILD_ROOT/download_cache" -i "$REPO_ROOT/downloads.ini"
 "$REPO_ROOT/utils/downloads.py" unpack -c "$BUILD_ROOT/download_cache" -i "$REPO_ROOT/downloads.ini" -- "$BUILD_ROOT/src"
 
+# 2026-10-25 (Claude): 5th real build failure -- moved here from after
+# domain substitution. update_rust.py's own download URL points at
+# Google's real CDN; domain_substitution.py (step 4) rewrites that exact
+# string into a de-Googled placeholder throughout the source tree, so
+# running this AFTER substitution silently broke the download. Build-time
+# toolchain fetches must happen on the real, unsubstituted tree.
+python3 "$BUILD_ROOT/src/tools/rust/update_rust.py"
+
 # 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
 "$REPO_ROOT/utils/prune_binaries.py" "$BUILD_ROOT/src" "$REPO_ROOT/pruning.list"
 
@@ -59,12 +67,6 @@ mkdir -p "$BUILD_ROOT/download_cache"
 # (following docs/building.md's own steps 1-6) never calls it, so do it
 # explicitly before gn gen.
 "$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
-
-# 2026-10-25 (Claude): fourth real build failure -- gn gen also needs
-# third_party/rust-toolchain/VERSION, fetched by the normal gclient hooks
-# flow but not by this manual recipe. Fetch it the same real way.
-python3 "$BUILD_ROOT/src/tools/rust/update_rust.py" || \
-  python3 "$BUILD_ROOT/src/tools/clang/scripts/update.py" --package=rust-toolchain || true
 
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"
