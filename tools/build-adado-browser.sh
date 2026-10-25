@@ -85,6 +85,14 @@ find "$BUILD_ROOT/src/third_party/rust-toolchain/" -name VERSION 2>&1 || true
 mkdir -p "$BUILD_ROOT/src/third_party/cpython3/host/bin"
 ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/python3"
 
+# 2026-10-25 (Claude): 9th real build failure -- BUILD.gn reads
+# third_party/llvm-build/Release+Asserts/cr_build_revision to tag which
+# exact pinned clang built this (used for AFDO/PGO profile matching).
+# chrome_pgo_phase=0 is already set in flags.gn, so no real profile is
+# ever applied -- the file just needs to exist and be readable.
+mkdir -p "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts"
+echo "adado-browser-local-build" > "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts/cr_build_revision"
+
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"
 cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
