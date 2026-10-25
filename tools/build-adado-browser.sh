@@ -150,6 +150,18 @@ STUB_EOF
 # 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
 "$REPO_ROOT/utils/prune_binaries.py" "$BUILD_ROOT/src" "$REPO_ROOT/pruning.list"
 
+# 2026-10-25 (Claude): 17th real failure -- gn gen asserts the Debian
+# sysroot (build/linux/debian_bullseye_amd64-sysroot) must exist. This
+# was fetched by an explicit install-sysroot.py call in an earlier round
+# of this script, then removed during the "there's probably an SDK...
+# run first for dependencies" cleanup under the assumption gclient's own
+# hooks would fetch it -- they don't; it's a genuinely separate step
+# real Chromium contributors run themselves. Same window as the earlier
+# rust-toolchain fix: after prune (which would otherwise sweep this
+# freshly-fetched sysroot away as an unrecognized prebuilt-binary dir),
+# before patches/domain-substitution.
+python3 "$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)

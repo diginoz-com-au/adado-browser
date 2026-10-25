@@ -11,6 +11,14 @@
 # needed several rounds to find its own.
 set -euo pipefail
 
+# 2026-10-25 (Claude): 17th real failure (Windows) -- gclient's hooks try
+# to download Google's INTERNAL MSVC toolchain package (Googlers-only,
+# "No downloadable toolchain found"), ignoring the real, local Visual
+# Studio ilammy/msvc-dev-cmd already set up in the workflow step before
+# this script runs. This exact env var is Chromium's own documented
+# escape hatch for using a local toolchain instead.
+export DEPOT_TOOLS_WIN_TOOLCHAIN=0
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_ROOT="${BUILD_ROOT:-$REPO_ROOT/build/work}"
 JOBS="${JOBS:-2}"
