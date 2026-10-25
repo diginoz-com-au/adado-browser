@@ -1,4 +1,4 @@
-name: Build AdaDo Browser (Linux)
+name: Build AdaDo Browser (Linux + Windows)
 
 on:
   workflow_dispatch:
@@ -114,3 +114,63 @@ jobs:
       - name: Report disk space on failure
         if: failure()
         run: df -h /
+
+  # 2026-10-25 (Claude, Dan live: "we should make a windows and linux
+  # version at same time"): separate, independent job -- runs in true
+  # parallel on its own GitHub-hosted machine, so it can never slow down
+  # or risk the Linux job above. This is a FIRST attempt, not yet
+  # verified end to end -- expect real Windows-specific gaps the same
+  # way Linux needed several rounds to find its own (toolchain/
+  # dependency fetching, not disk space, given this is a separate
+  # runner with its own clean disk).
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install depot_tools
+        shell: bash
+        run: |
+          git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git /tmp/depot_tools
+          echo "/tmp/depot_tools" >> "$GITHUB_PATH"
+
+      - name: Cache downloaded Chromium source
+        uses: actions/cache@v4
+        with:
+          path: build/work/download_cache
+          key: chromium-src-windows-${{ hashFiles('downloads.ini') }}
+
+      - name: Run the real build pipeline (ADADO-671, Windows)
+        shell: bash
+        env:
+          BUILD_ROOT: ${{ github.workspace }}/build/work
+          JOBS: 2
+        run: |
+          bash tools/build-adado-browser-windows.sh
+
+      - name: Package the real build output
+        if: success()
+        shell: bash
+        run: |
+          mkdir -p artifact
+          cp build/work/src/out/Default/chrome.exe artifact/ || true
+          cp build/work/src/out/Default/chrome_100_percent.pak artifact/ || true
+          cp build/work/src/out/Default/chrome_200_percent.pak artifact/ || true
+          cp build/work/src/out/Default/icudtl.dat artifact/ || true
+          cp build/work/src/out/Default/resources.pak artifact/ || true
+          cp -r build/work/src/out/Default/locales artifact/ || true
+
+      - name: Upload real build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adado-browser-chrome-windows
+          path: artifact/
+          retention-days: 14
