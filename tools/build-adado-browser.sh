@@ -162,6 +162,17 @@ STUB_EOF
 # before patches/domain-substitution.
 python3 "$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
 
+# 2026-10-25 (Claude): 18th real failure -- gn gen also asserts
+# third_party/rust-toolchain/VERSION must exist. Same root cause as the
+# sysroot above: this was fetched by an explicit update_rust.py call in
+# an earlier round, removed during the gclient-as-authoritative-
+# mechanism cleanup on the wrong assumption gclient's own hooks fetch
+# it too -- they fetch neither. Same safe window: after prune (which
+# would otherwise sweep the freshly-fetched toolchain away), before
+# patches/domain-substitution (which must not rewrite its download URL
+# into a de-Googled placeholder before it's used).
+python3 "$BUILD_ROOT/src/tools/rust/update_rust.py"
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
