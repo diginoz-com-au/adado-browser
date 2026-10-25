@@ -45,16 +45,26 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 18
+          sudo apt-get install -y libc++-18-dev libc++abi-18-dev
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
           clang++ --version
+          echo '#include <expected>' | clang++-18 -std=c++23 -stdlib=libc++ -x c++ -c - -o /tmp/expected_check.o && echo "libc++ <expected> OK"
 
+      # 2026-10-25 (Claude): second real failure -- clang-18 was correctly
+      # selected, but <expected> still didn't resolve ("unknown template
+      # name 'expected'"), because clang defaults to the SYSTEM libstdc++
+      # (GCC's standard library) unless told otherwise, and that lookup
+      # was failing here. Forcing clang's own libc++-18 explicitly via
+      # CXXFLAGS/LDFLAGS sidesteps the ambiguity entirely.
       - name: Run the real build pipeline (ADADO-671)
         env:
           BUILD_ROOT: ${{ github.workspace }}/build/work
           JOBS: 2
           CC: clang-18
           CXX: clang++-18
+          CXXFLAGS: -stdlib=libc++
+          LDFLAGS: -stdlib=libc++
         run: |
           df -h /
           bash tools/build-adado-browser.sh
