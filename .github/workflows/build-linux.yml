@@ -1,0 +1,66 @@
+name: Build AdaDo Browser (Linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      # 2026-10-25 (Claude, Dan: "could you not build this in github so not
+      # taking up disk space"): standard trick -- GitHub's ubuntu-latest
+      # image ships ~50GB of preinstalled toolchains nobody here needs
+      # (Android SDK, .NET, GHC, extra docker images). Removing them frees
+      # real usable space on the SAME disk, before the build ever starts.
+      - name: Free disk space
+        run: |
+          echo "Before:"; df -h /
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /usr/share/dotnet /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -af || true
+          echo "After:"; df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip ninja-build pkg-config \
+            libnss3-dev libasound2-dev build-essential
+
+      - name: Run the real build pipeline (ADADO-671)
+        env:
+          BUILD_ROOT: ${{ github.workspace }}/build/work
+          JOBS: 2
+        run: |
+          df -h /
+          bash tools/build-adado-browser.sh
+
+      - name: Package the real build output
+        if: success()
+        run: |
+          mkdir -p artifact
+          cp build/work/src/out/Default/chrome artifact/
+          cp build/work/src/out/Default/chrome_100_percent.pak artifact/ || true
+          cp build/work/src/out/Default/chrome_200_percent.pak artifact/ || true
+          cp build/work/src/out/Default/icudtl.dat artifact/ || true
+          cp build/work/src/out/Default/resources.pak artifact/ || true
+          cp build/work/src/out/Default/v8_context_snapshot.bin artifact/ || true
+          cp -r build/work/src/out/Default/locales artifact/ || true
+
+      - name: Upload real build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adado-browser-chrome-linux
+          path: artifact/
+          retention-days: 14
+
+      - name: Report disk space on failure
+        if: failure()
+        run: df -h /
