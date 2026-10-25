@@ -43,7 +43,10 @@ mkdir -p "$BUILD_ROOT/download_cache"
 # string into a de-Googled placeholder throughout the source tree, so
 # running this AFTER substitution silently broke the download. Build-time
 # toolchain fetches must happen on the real, unsubstituted tree.
-python3 "$BUILD_ROOT/src/tools/rust/update_rust.py"
+( cd "$BUILD_ROOT/src" && python3 tools/rust/update_rust.py ) || echo "update_rust.py exited non-zero (continuing to inspect)"
+echo "[adado-browser] third_party/rust-toolchain/ contents after update_rust.py:"
+ls -la "$BUILD_ROOT/src/third_party/rust-toolchain/" 2>&1 || echo "  (directory does not exist)"
+find "$BUILD_ROOT/src/third_party/rust-toolchain/" -name VERSION 2>&1 || true
 
 # 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
 "$REPO_ROOT/utils/prune_binaries.py" "$BUILD_ROOT/src" "$REPO_ROOT/pruning.list"
