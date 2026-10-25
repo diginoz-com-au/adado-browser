@@ -37,23 +37,31 @@ mkdir -p "$BUILD_ROOT/download_cache"
 "$REPO_ROOT/utils/downloads.py" retrieve -c "$BUILD_ROOT/download_cache" -i "$REPO_ROOT/downloads.ini"
 "$REPO_ROOT/utils/downloads.py" unpack -c "$BUILD_ROOT/download_cache" -i "$REPO_ROOT/downloads.ini" -- "$BUILD_ROOT/src"
 
+# 2026-10-25 (Claude, Dan live: "theres probably an sdk that has them...
+# to have run first for dependencies?" -- correct call, after 3
+# individually-discovered missing build-time deps in a row (rust
+# toolchain, pinned cpython3, llvm-build revision marker). Chromium's
+# real DEPS file lists every one of these with the exact fetch command,
+# which is exactly what `gclient runhooks` processes -- using the real,
+# authoritative mechanism instead of guessing at gaps one at a time.
+# depot_tools is just scripts (not a large download); this doesn't need
+# a full `gclient sync` (which would re-clone all of chromium/src's git
+# history) -- `managed: False` lets it operate on the already-unpacked
+# tree from downloads.py above.
+cat > "$BUILD_ROOT/.gclient" << GCLIENT_EOF
+solutions = [
+  {
+    "name": "src",
+    "url": "https://chromium.googlesource.com/chromium/src.git",
+    "deps_file": "DEPS",
+    "managed": False,
+  },
+]
+GCLIENT_EOF
+( cd "$BUILD_ROOT" && gclient runhooks )
+
 # 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
 "$REPO_ROOT/utils/prune_binaries.py" "$BUILD_ROOT/src" "$REPO_ROOT/pruning.list"
-
-# 2026-10-25 (Claude): 6th/7th real build failure -- confirmed via direct
-# ls that update_rust.py's download genuinely succeeds and the real
-# toolchain lands at third_party/rust-toolchain/, but it was gone again by
-# gn gen. Root cause: prune_binaries.py (step 2) doesn't just remove the
-# paths literally listed in pruning.list -- it generically sweeps away
-# ANY prebuilt-binary-looking directory it finds that it doesn't
-# recognize, which deleted the freshly-fetched rust toolchain when the
-# fetch ran before pruning. And domain_substitution.py (step 4) breaks
-# the fetch's own download URL if run before it (5th failure). The only
-# safe window is between the two: after prune, before domain substitution.
-( cd "$BUILD_ROOT/src" && python3 tools/rust/update_rust.py ) || echo "update_rust.py exited non-zero (continuing to inspect)"
-echo "[adado-browser] third_party/rust-toolchain/ contents after update_rust.py:"
-ls -la "$BUILD_ROOT/src/third_party/rust-toolchain/" 2>&1 || echo "  (directory does not exist)"
-find "$BUILD_ROOT/src/third_party/rust-toolchain/" -name VERSION 2>&1 || true
 
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
@@ -66,32 +74,6 @@ find "$BUILD_ROOT/src/third_party/rust-toolchain/" -name VERSION 2>&1 || true
   -f "$REPO_ROOT/domain_substitution.list" \
   -c "$BUILD_ROOT/domsubcache.tar.gz" \
   "$BUILD_ROOT/src"
-
-# 2026-10-25 (Claude): third real build failure -- gn itself compiled
-# fine, but `gn gen` asserts on a missing Debian sysroot
-# (build/linux/debian_bullseye_amd64-sysroot). The full `gclient
-# runhooks` flow downloads this automatically; this manual recipe
-# (following docs/building.md's own steps 1-6) never calls it, so do it
-# explicitly before gn gen.
-"$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
-
-# 2026-10-25 (Claude): 8th real build failure -- gn gen's own build-time
-# helper scripts (e.g. build/toolchain/get_concurrent_links.py) call a
-# pinned third_party/cpython3/host/bin/python3 that the manual recipe
-# never fetches either. It's only used for basic system introspection
-# here (counting CPUs/memory for parallel link jobs), not anything
-# version-sensitive -- point it at the system python3 instead of
-# fetching Chromium's full pinned CPython via CIPD.
-mkdir -p "$BUILD_ROOT/src/third_party/cpython3/host/bin"
-ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/python3"
-
-# 2026-10-25 (Claude): 9th real build failure -- BUILD.gn reads
-# third_party/llvm-build/Release+Asserts/cr_build_revision to tag which
-# exact pinned clang built this (used for AFDO/PGO profile matching).
-# chrome_pgo_phase=0 is already set in flags.gn, so no real profile is
-# ever applied -- the file just needs to exist and be readable.
-mkdir -p "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts"
-echo "adado-browser-local-build" > "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts/cr_build_revision"
 
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"

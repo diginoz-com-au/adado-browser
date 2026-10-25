@@ -27,6 +27,18 @@ jobs:
           sudo docker image prune -af || true
           echo "After:"; df -h /
 
+      # 2026-10-25 (Claude, Dan live: "theres probably an sdk that has
+      # them... to have run first for dependencies?"): depot_tools'
+      # gclient is the real, authoritative way Chromium fetches every
+      # build-time third_party dependency (rust toolchain, pinned
+      # cpython3, sysroots, llvm-build, etc.) via DEPS hooks -- using it
+      # instead of guessing at individual missing pieces one at a time.
+      # It's just scripts, not a large download.
+      - name: Install depot_tools
+        run: |
+          git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git /tmp/depot_tools
+          echo "/tmp/depot_tools" >> "$GITHUB_PATH"
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
