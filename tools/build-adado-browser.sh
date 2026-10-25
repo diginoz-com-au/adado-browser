@@ -52,6 +52,14 @@ mkdir -p "$BUILD_ROOT/download_cache"
   -c "$BUILD_ROOT/domsubcache.tar.gz" \
   "$BUILD_ROOT/src"
 
+# 2026-10-25 (Claude): third real build failure -- gn itself compiled
+# fine, but `gn gen` asserts on a missing Debian sysroot
+# (build/linux/debian_bullseye_amd64-sysroot). The full `gclient
+# runhooks` flow downloads this automatically; this manual recipe
+# (following docs/building.md's own steps 1-6) never calls it, so do it
+# explicitly before gn gen.
+"$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=amd64
+
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"
 cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
