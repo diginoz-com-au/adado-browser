@@ -70,6 +70,30 @@ solutions = [
 ]
 target_os = ["win"]
 GCLIENT_EOF
+# 2026-10-25 (Claude): 16th real failure -- see comment in the stub
+# content below. Overwrite BEFORE gclient runhooks runs it.
+mkdir -p "$BUILD_ROOT/src/testing"
+cat > "$BUILD_ROOT/src/testing/generate_location_tags.py" << 'STUB_EOF'
+#!/usr/bin/env python3
+# 2026-10-25 (Claude): 16th real failure -- the real generate_location_tags.py
+# recursively looks for a COMMON_METADATA file in arbitrarily many
+# directories across chrome/android's whole tree (two different missing
+# paths found in two consecutive runs; whack-a-moling each one is an
+# unbounded tail). This script only feeds Chromium's own CI test-sharding/
+# flakiness dashboards (resultdb) -- irrelevant to compiling
+# chrome/chromedriver/chrome_sandbox. Stub it to a no-op that satisfies
+# the hook's own contract (write valid JSON to --out) without walking
+# any directory tree.
+import argparse
+import json
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--out", required=True)
+args = parser.parse_args()
+with open(args.out, "w") as f:
+    json.dump({}, f)
+STUB_EOF
+
 ( cd "$BUILD_ROOT" && gclient runhooks )
 
 # 2. Prune binaries ungoogled-chromium doesn't ship prebuilt
