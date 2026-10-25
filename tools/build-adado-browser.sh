@@ -97,6 +97,15 @@ mkdir -p "$BUILD_ROOT/src/android_webview/tools"
 touch "$BUILD_ROOT/src/android_webview/tools/android-webview-arm.orderfile.txt"
 touch "$BUILD_ROOT/src/android_webview/tools/android-webview-arm64.orderfile.txt"
 
+# 2026-10-25 (Claude): 15th real failure -- generate_location_tags.py (a
+# hook that tags tests for Chromium's own CI dashboards, unrelated to
+# compiling chrome/chromedriver/chrome_sandbox) reads chrome/android/
+# COMMON_METADATA unconditionally, regardless of target_os. Same class
+# as the orderfile placeholders above: harmless empty marker file, pure
+# CI test-metadata, not functional build output.
+mkdir -p "$BUILD_ROOT/src/chrome/android"
+touch "$BUILD_ROOT/src/chrome/android/COMMON_METADATA"
+
 # 2026-10-25 (Claude): 11th real failure -- gclient tried to resolve an
 # Android-only CIPD dependency (android_webview's orderfile) even though
 # this is a Linux desktop build. target_os scopes DEPS's OS-conditional

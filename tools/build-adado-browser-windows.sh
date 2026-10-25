@@ -30,6 +30,35 @@ mkdir -p "$BUILD_ROOT/download_cache"
 ( cd "$BUILD_ROOT/src" && git init -q && git add -A && \
   git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" )
 
+# 2026-10-25 (Claude): ported from the Linux pipeline's 13th/14th real
+# failures -- gclient recurses the same "Subproject commit" diff check
+# into every individual git-type DEPS entry, not just src/ itself.
+# Blanket git-init every third_party/* wrapper dir, then the handful
+# that use a one-level-deeper third_party/<name>/src convention.
+for d in "$BUILD_ROOT/src/third_party"/*/; do
+  if [ -d "$d" ] && [ ! -e "$d/.git" ]; then
+    ( cd "$d" && git init -q && git add -A -- . 2>/dev/null && \
+      git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" --allow-empty 2>/dev/null ) || true
+  fi
+done
+for d in "$BUILD_ROOT/src/third_party"/*/src/; do
+  if [ -d "$d" ] && [ ! -e "$d/.git" ]; then
+    ( cd "$d" && git init -q && git add -A -- . 2>/dev/null && \
+      git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" --allow-empty 2>/dev/null ) || true
+  fi
+done
+
+# 2026-10-25 (Claude): ported from the Linux pipeline's 12th/15th real
+# failures -- a couple of hooks read android-only/PGO-only files
+# unconditionally regardless of target_os. Harmless empty placeholders;
+# chrome_pgo_phase=0 already disables real PGO use, and COMMON_METADATA
+# is pure CI test-tagging, not functional build output.
+mkdir -p "$BUILD_ROOT/src/android_webview/tools"
+touch "$BUILD_ROOT/src/android_webview/tools/android-webview-arm.orderfile.txt"
+touch "$BUILD_ROOT/src/android_webview/tools/android-webview-arm64.orderfile.txt"
+mkdir -p "$BUILD_ROOT/src/chrome/android"
+touch "$BUILD_ROOT/src/chrome/android/COMMON_METADATA"
+
 cat > "$BUILD_ROOT/.gclient" << GCLIENT_EOF
 solutions = [
   {
