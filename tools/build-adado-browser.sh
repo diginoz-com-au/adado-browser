@@ -56,6 +56,16 @@ mkdir -p "$BUILD_ROOT/download_cache"
 ( cd "$BUILD_ROOT/src" && git init -q && git add -A && \
   git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" )
 
+# 2026-10-25 (Claude): 12th real failure -- target_os=linux didn't gate
+# this one out after all (an android_webview orderfile -- pure PGO
+# binary-layout data, not functionally required; chrome_pgo_phase=0 is
+# already set). A harmless empty placeholder is correct here, same
+# pattern as the earlier marker files -- gclient just needs to read
+# SOME file at this path, content is irrelevant with PGO disabled.
+mkdir -p "$BUILD_ROOT/src/android_webview/tools"
+touch "$BUILD_ROOT/src/android_webview/tools/android-webview-arm.orderfile.txt"
+touch "$BUILD_ROOT/src/android_webview/tools/android-webview-arm64.orderfile.txt"
+
 # 2026-10-25 (Claude): 11th real failure -- gclient tried to resolve an
 # Android-only CIPD dependency (android_webview's orderfile) even though
 # this is a Linux desktop build. target_os scopes DEPS's OS-conditional
