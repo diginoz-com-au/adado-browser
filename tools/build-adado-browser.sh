@@ -56,6 +56,21 @@ mkdir -p "$BUILD_ROOT/download_cache"
 ( cd "$BUILD_ROOT/src" && git init -q && git add -A && \
   git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" )
 
+# 2026-10-25 (Claude): 13th real failure -- the single top-level git-init
+# only satisfies gclient's check for src/ itself. Chromium's real DEPS
+# lists MANY individual git-type dependencies (e.g. third_party/angle)
+# that real Chromium checkouts clone as their OWN separate git repos;
+# gclient recurses into each one doing the same diff check. Rather than
+# discover each one individually (same shape as the last several
+# rounds), git-init every existing third_party/* subdirectory in one
+# pass -- virtually all of Chromium's git-type deps live there.
+for d in "$BUILD_ROOT/src/third_party"/*/; do
+  if [ -d "$d" ] && [ ! -e "$d/.git" ]; then
+    ( cd "$d" && git init -q && git add -A -- . 2>/dev/null && \
+      git -c user.email="build@adado.local" -c user.name="adado-browser-build" commit -q -m "init for gclient" --allow-empty 2>/dev/null ) || true
+  fi
+done
+
 # 2026-10-25 (Claude): 12th real failure -- target_os=linux didn't gate
 # this one out after all (an android_webview orderfile -- pure PGO
 # binary-layout data, not functionally required; chrome_pgo_phase=0 is
