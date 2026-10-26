@@ -239,6 +239,21 @@ cp /tmp/mold-3.0.0-x86_64-linux/bin/mold "$MOLD_DIR/mold"
 chmod +x "$MOLD_DIR/mold"
 rm -rf /tmp/mold.tar.gz /tmp/mold-3.0.0-x86_64-linux
 
+# 2026-10-27 (Claude): 26th real failure -- the custom_vars=non_git_source
+# fix got mold working (that condition path IS satisfied now) but node
+# still came up missing -- confirms gclient runhooks with managed:False
+# just doesn't reliably execute condition-gated CIPD hooks at all, custom
+# var or not. Same direct-fetch pattern as mold, real upstream Node.js
+# release binary instead of guessing at why the hook didn't fire.
+NODE_DIR="$BUILD_ROOT/src/third_party/node/linux/node-linux-x64"
+mkdir -p "$NODE_DIR"
+curl -fL -o /tmp/node.tar.gz \
+  https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.gz
+tar -xzf /tmp/node.tar.gz -C /tmp
+cp -r /tmp/node-v20.18.1-linux-x64/. "$NODE_DIR/"
+chmod +x "$NODE_DIR/bin/node"
+rm -rf /tmp/node.tar.gz /tmp/node-v20.18.1-linux-x64
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
