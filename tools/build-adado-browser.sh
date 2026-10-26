@@ -173,6 +173,17 @@ python3 "$BUILD_ROOT/src/build/linux/sysroot_scripts/install-sysroot.py" --arch=
 # into a de-Googled placeholder before it's used).
 python3 "$BUILD_ROOT/src/tools/rust/update_rust.py"
 
+# 2026-10-25 (Claude): 19th real failure -- gn gen's own build helper
+# (get_concurrent_links.py, called via exec_script) needs a pinned
+# third_party/cpython3/host/bin/python3 binary. Same root cause as the
+# sysroot/rust fixes above (fetched explicitly in an earlier round,
+# removed in the gclient cleanup on the same wrong assumption). Symlink
+# to the system python3 is sufficient here specifically because this
+# helper only does CPU/memory introspection for link-job parallelism,
+# not anything version-sensitive.
+mkdir -p "$BUILD_ROOT/src/third_party/cpython3/host/bin"
+ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/python3"
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
