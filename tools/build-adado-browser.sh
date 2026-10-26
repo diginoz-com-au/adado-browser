@@ -192,8 +192,15 @@ ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/py
 # the fourth and last of that original batch. Harmless placeholder:
 # chrome_pgo_phase=0 is already set, so nothing reads this file's
 # content for real PGO use, only its existence.
-mkdir -p "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts"
-echo "0" > "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts/cr_build_revision"
+# 2026-10-26 (Claude): 21st real failure -- the "0" placeholder above was
+# wrong. cr_build_revision isn't just a PGO marker; BUILD.gn asserts its
+# content matches the clang toolchain update.py actually expects
+# ("clang_revision=\"0\" but update.py expected ... Did you forget to
+# gclient sync?"). Run the REAL Chromium-provided toolchain fetcher
+# instead of guessing the string -- it downloads the correct prebuilt
+# clang/LLVM AND writes the matching cr_build_revision itself, so this
+# can never drift out of sync the way a hardcoded string would.
+python3 "$BUILD_ROOT/src/tools/clang/scripts/update.py"
 
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
