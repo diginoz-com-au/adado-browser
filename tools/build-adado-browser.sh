@@ -184,6 +184,17 @@ python3 "$BUILD_ROOT/src/tools/rust/update_rust.py"
 mkdir -p "$BUILD_ROOT/src/third_party/cpython3/host/bin"
 ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/python3"
 
+# 2026-10-26 (Claude): 20th real failure -- BUILD.gn reads
+# third_party/llvm-build/Release+Asserts/cr_build_revision for AFDO/PGO
+# profile matching. Same root cause as sysroot/rust/cpython3 above (all
+# four were fixed individually in the ORIGINAL debugging pass, then all
+# four got wiped out together in the gclient-cleanup round) -- this is
+# the fourth and last of that original batch. Harmless placeholder:
+# chrome_pgo_phase=0 is already set, so nothing reads this file's
+# content for real PGO use, only its existence.
+mkdir -p "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts"
+echo "0" > "$BUILD_ROOT/src/third_party/llvm-build/Release+Asserts/cr_build_revision"
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
