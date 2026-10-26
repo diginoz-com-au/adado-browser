@@ -18,7 +18,6 @@ safe_browsing_mode=0
 symbol_level=0
 treat_warnings_as_errors=false
 use_lld=true
-use_mold_linker=false
 use_official_google_api_keys=false
 use_unofficial_version_number=false
 v8_drumbrake_bounds_checks=true
