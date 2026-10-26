@@ -202,6 +202,27 @@ ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/host/bin/py
 # can never drift out of sync the way a hardcoded string would.
 python3 "$BUILD_ROOT/src/tools/clang/scripts/update.py"
 
+# 2026-10-26 (Claude): 24th real failure -- ninja: '../../buildtools/
+# third_party/mold/cipd/mold', needed by 'phony/chrome/chrome_initial.
+# inputs', missing and no known rule to make it. Chromium's own DEPS has
+# this exact CIPD package (chromium/buildtools/third_party/mold/mold),
+# but it's gated `condition: host_os == "linux" and non_git_source` --
+# our checkout is a real git checkout (the whole point of the marker-file
+# trick a few rounds back was avoiding gclient's full non-git sync), so
+# non_git_source is false here and gclient runhooks silently never fetches
+# it, while GN's build graph requires the file to exist regardless of how
+# it got there. Fetching the real upstream mold release binary directly
+# (same class of fix as the clang step above) sidesteps the gclient
+# condition entirely instead of fighting it.
+MOLD_DIR="$BUILD_ROOT/src/buildtools/third_party/mold/cipd"
+mkdir -p "$MOLD_DIR"
+curl -fL -o /tmp/mold.tar.gz \
+  https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-x86_64-linux.tar.gz
+tar -xzf /tmp/mold.tar.gz -C /tmp
+cp /tmp/mold-3.0.0-x86_64-linux/bin/mold "$MOLD_DIR/mold"
+chmod +x "$MOLD_DIR/mold"
+rm -rf /tmp/mold.tar.gz /tmp/mold-3.0.0-x86_64-linux
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
