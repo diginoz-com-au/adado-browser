@@ -110,6 +110,21 @@ touch "$BUILD_ROOT/src/chrome/android/COMMON_METADATA"
 # Android-only CIPD dependency (android_webview's orderfile) even though
 # this is a Linux desktop build. target_os scopes DEPS's OS-conditional
 # entries correctly, same as a real Linux Chromium checkout would set.
+# 2026-10-27 (Claude, Dan live: "remember you were gonna install some
+# chromium sdk type stuff that had all that apps so you dont have to keep
+# failing and installing at every tool call" -- the real gap in the
+# gclient-runhooks approach from the 2026-10-25 "theres probably an sdk
+# that has them" fix: DEPS has conditional CIPD hooks (mold's fetch is
+# `condition: host_os == "linux" and non_git_source`) that silently never
+# fire because our synthetic "already synced" checkout (managed: False +
+# git-init tricks, to avoid a full multi-GB re-clone) doesn't set the
+# checkout-state vars those conditions check. DEPS itself defaults
+# non_git_source to True for a REAL checkout; setting it explicitly here
+# makes gclient runhooks evaluate conditional hooks the same way a normal
+# checkout would, fetching mold (and anything else gated the same way)
+# through the real mechanism instead of each one being individually
+# discovered by a failed build. The manual mold fetch below stays as a
+# safety net in case this alone isn't sufficient for some hook.
 cat > "$BUILD_ROOT/.gclient" << GCLIENT_EOF
 solutions = [
   {
@@ -117,6 +132,7 @@ solutions = [
     "url": "https://chromium.googlesource.com/chromium/src.git",
     "deps_file": "DEPS",
     "managed": False,
+    "custom_vars": {"non_git_source": True},
   },
 ]
 target_os = ["linux"]
