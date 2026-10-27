@@ -506,19 +506,24 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js \
     2>&1 | tee /tmp/ai-skills-preflight.log || true )
 
-# 2026-10-28 (Claude): 41st real failure -- real log evidence (not a
-# guess) proved the 40th fix's preflight was necessary but not
-# sufficient. The ai_assistance:generate_skills action genuinely ran
-# TWICE: once in the preflight above (succeeded), then AGAIN inside the
-# main -j$JOBS parallel build moments before the esbuild bundle step
-# that consumes its output -- meaning BUILD.gn never declared the
-# generate_skills outputs as a real input dependency of the bundle
-# action, so ninja has no ordering guarantee between them at all. Under
-# high parallelism the bundle step's read can race the second,
-# redundant generate_skills run and lose. Building the bundle's own
-# OUTPUT here, serially, right after its skill-file inputs exist and
-# before the big parallel run starts, resolves and caches it so the
-# main build sees it already up to date and never re-races it.
+# 2026-10-28 (Claude): the 41st fix's own -j1 preflight of
+# ai_assistance.js ALSO failed with the identical "cannot read file"
+# error, immediately after generate_skills reported success again --
+# ruling out a parallelism race entirely. Something more fundamental is
+# wrong: either generate_skills never writes real content to the exact
+# path ninja/esbuild expect, or it writes somewhere else. Stop guessing
+# at fixes blind -- get direct, unambiguous evidence of what this
+# action actually produced and where, before trying another fix.
+( cd "$BUILD_ROOT/src" && echo "=== skills dir after generate_skills preflight ===" \
+    && find out/Default/gen/third_party/devtools-frontend -iname "*.skill.js" -o -iname "SkillRegistry.js" 2>&1 \
+    && echo "=== full listing of the expected skills directory ===" \
+    && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/ 2>&1 \
+    && echo "=== searching whole tree for styling.skill.js by basename (wherever it really landed) ===" \
+    && find out/Default -iname "styling.skill.js" 2>&1 \
+    && echo "=== generate_skills action command (from ninja -t commands) ===" \
+    && ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js 2>&1 \
+    | tee /tmp/skill-diagnostic.log || true )
+
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j1 \
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/ai_assistance.js \
     2>&1 | tee /tmp/ai-assistance-bundle-preflight.log || true )
