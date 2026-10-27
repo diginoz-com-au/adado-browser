@@ -293,7 +293,13 @@ chmod +x "$CLANG_FORMAT_DIR/clang-format"
 TSC_DIR="$BUILD_ROOT/src/third_party/typescript/linux-amd64/src/lib"
 mkdir -p "$TSC_DIR"
 curl -fL -o /tmp/typescript.tgz \
-  https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz
+  # 2026-10-27 (Claude): 30th real failure -- TypeScript 7.x turned out
+  # to be a totally different package (the new Go-based "tsgo" compiler
+  # line) with almost no lib/*.d.ts files at all -- real npm tarball
+  # check confirmed only 1 .d.ts in the whole package vs the ~93 a
+  # classic 5.x release ships (lib.decorators.d.ts included). Chromium's
+  # build expects the classic lib set; pinned to a known-good 5.x.
+  https://registry.npmjs.org/typescript/-/typescript-5.6.3.tgz
 tar -xzf /tmp/typescript.tgz -C /tmp
 cp -r /tmp/package/lib/. "$TSC_DIR/"
 cat > "$TSC_DIR/tsc" << TSC_EOF
