@@ -245,14 +245,24 @@ rm -rf /tmp/mold.tar.gz /tmp/mold-3.0.0-x86_64-linux
 # just doesn't reliably execute condition-gated CIPD hooks at all, custom
 # var or not. Same direct-fetch pattern as mold, real upstream Node.js
 # release binary instead of guessing at why the hook didn't fire.
+# 2026-10-28 (Claude): 46th real failure, and the real root cause behind
+# the whole import.meta.main saga (39th-45th fixes): this fetch was
+# hardcoded to Node v20.18.1 at the time of the 26th fix, but Chromium's
+# OWN dependency metadata (third_party/node/update_node_binaries) -- read
+# directly by the build's own check_version.js step, which only now got
+# far enough to actually run and say so -- expects v24.12.0. v20 simply
+# doesn't have import.meta.main (added much later), which is exactly why
+# that guard kept silently no-oping. Fetching the version this exact
+# pinned checkout actually expects, instead of patching around scripts
+# written for the Node version chromium's own DEPS already declares.
 NODE_DIR="$BUILD_ROOT/src/third_party/node/linux/node-linux-x64"
 mkdir -p "$NODE_DIR"
 curl -fL -o /tmp/node.tar.gz \
-  https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.gz
+  https://nodejs.org/dist/v24.12.0/node-v24.12.0-linux-x64.tar.gz
 tar -xzf /tmp/node.tar.gz -C /tmp
-cp -r /tmp/node-v20.18.1-linux-x64/. "$NODE_DIR/"
+cp -r /tmp/node-v24.12.0-linux-x64/. "$NODE_DIR/"
 chmod +x "$NODE_DIR/bin/node"
-rm -rf /tmp/node.tar.gz /tmp/node-v20.18.1-linux-x64
+rm -rf /tmp/node.tar.gz /tmp/node-v24.12.0-linux-x64
 
 # 2026-10-27 (Claude): 27th real failure -- same class again, one layer
 # deeper: devtools-frontend/src/third_party/esbuild/esbuild missing (its
