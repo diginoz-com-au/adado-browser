@@ -283,6 +283,26 @@ curl -fL -o "$CLANG_FORMAT_DIR/clang-format" \
   https://chromium-clang-format.storage.googleapis.com/5d384f2a3e72f01c5c61dd07e3a2577723cfa20c8c019131467f00fb6da8a75c
 chmod +x "$CLANG_FORMAT_DIR/clang-format"
 
+# 2026-10-27 (Claude): 29th real failure -- third_party/typescript/
+# linux-amd64/src/lib/tsc missing. Real npm `typescript` package's lib/
+# directory (tsc.js + its siblings, all required -- tsc.js isn't
+# self-contained) placed at the exact expected path, with a thin shell
+# wrapper named exactly `tsc` (no .js) that execs it via the real node
+# binary already fetched above (third_party/node/linux/...) -- same
+# pattern real npm-installed `tsc` uses (a shebang shim calling node).
+TSC_DIR="$BUILD_ROOT/src/third_party/typescript/linux-amd64/src/lib"
+mkdir -p "$TSC_DIR"
+curl -fL -o /tmp/typescript.tgz \
+  https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz
+tar -xzf /tmp/typescript.tgz -C /tmp
+cp -r /tmp/package/lib/. "$TSC_DIR/"
+cat > "$TSC_DIR/tsc" << TSC_EOF
+#!/bin/sh
+exec "$NODE_DIR/bin/node" "$TSC_DIR/tsc.js" "\$@"
+TSC_EOF
+chmod +x "$TSC_DIR/tsc"
+rm -rf /tmp/typescript.tgz /tmp/package
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
