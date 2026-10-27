@@ -527,6 +527,8 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
     && ( cd out/Default && eval "$(tail -1 /tmp/skill-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
     && echo "=== does the file exist now, after the direct run? ===" \
     && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/ 2>&1 \
+    && echo "=== the REAL pinned build_ai_skills.mjs source, straight from this exact checkout ===" \
+    && cat third_party/devtools-frontend/src/scripts/build/build_ai_skills.mjs 2>&1 \
     | tee /tmp/skill-diagnostic.log || true )
 
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j1 \
