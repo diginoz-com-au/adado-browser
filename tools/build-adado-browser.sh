@@ -362,8 +362,10 @@ rm -f /tmp/bidi_node_modules.tar.gz
 # Simple, standard Unix tool already packaged for Ubuntu -- real system
 # apt package instead of guessing at the CIPD platform-templated URL.
 sudo apt-get install -y gperf
-mkdir -p "$BUILD_ROOT/src/third_party/gperf/cipd"
-ln -sf "$(command -v gperf)" "$BUILD_ROOT/src/third_party/gperf/cipd/gperf"
+# 2026-10-27 (Claude): 35th real failure -- ninja actually wants the
+# binary at cipd/bin/gperf (a bin/ subdir), not cipd/gperf directly.
+mkdir -p "$BUILD_ROOT/src/third_party/gperf/cipd/bin"
+ln -sf "$(command -v gperf)" "$BUILD_ROOT/src/third_party/gperf/cipd/bin/gperf"
 
 # cpython3 linux-amd64 variant -- same real system-python symlink trick
 # that already fixed the separate third_party/cpython3/host path (19th
