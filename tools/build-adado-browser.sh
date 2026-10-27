@@ -462,6 +462,89 @@ else:
 PYEOF
 fi
 
+# 2026-10-28 (Claude): 45th real failure, same night -- with the 44th
+# fix's sweep confirmed working (runMain() now genuinely executes, per
+# the real stack trace: "at runMain (generate_css_js_files.js:62:5)"),
+# a real NEW bug surfaced underneath it: fs.writeFileSync failed with
+# ENOENT because the parent directory (gen/.../ui/kit/cards/) doesn't
+# exist yet. The real stack trace pinned this to the SHARED helper both
+# generator scripts call -- "at writeIfChanged
+# (scripts/build/ninja/write-if-changed.js:29:6)" -- which writes
+# directly with no mkdir first. Same lesson as the 44th fix: patch the
+# ONE shared helper instead of each generator script that happens to
+# call it, since more probably exist beyond just these two.
+WRITE_IF_CHANGED="$BUILD_ROOT/src/third_party/devtools-frontend/src/scripts/build/ninja/write-if-changed.js"
+if [ -f "$WRITE_IF_CHANGED" ]; then
+  python3 - "$WRITE_IF_CHANGED" <<'PYEOF'
+import sys, re
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+
+if "mkdirSync" in c or "mkdir(" in c:
+    print("INFO write-if-changed.js already creates its directory -- left untouched")
+    raise SystemExit
+
+# Adaptive, not a guessed literal match: upstream main uses a DIFFERENT
+# (async, fs/promises) variant than this pinned revision's real sync
+# version per its own stack trace (Module.writeFileSync) -- same
+# main-vs-pin mismatch class as every other fix tonight. Extract the
+# real function signature and first parameter name structurally instead
+# of assuming exact content, so this works whichever variant this pin
+# actually has.
+m = re.search(r'(export\s+(?:async\s+)?function\s+writeIfChanged\s*\(\s*(\w+)[^)]*\)\s*\{)', c)
+if not m:
+    print("WARN could not locate writeIfChanged's signature -- left untouched, diagnostic will show real content")
+    raise SystemExit
+
+sig, first_param = m.group(1), m.group(2)
+insert_point = m.end()
+mkdir_call = f"
+  if (typeof require !== 'undefined') {{}} // no-op guard
+  (await import('node:fs')).mkdirSync((await import('node:path')).dirname({first_param}), {{recursive: true}});"
+# Simpler: use static imports instead of dynamic ones, added once near top.
+if "from 'node:path'" not in c and 'from "node:path"' not in c:
+    # Insert a path import right after the first existing import line.
+    first_import_end = c.index('
+', c.index('import ')) + 1
+    c = c[:first_import_end] + "import * as path from 'node:path';
+" + c[first_import_end:]
+    # Recompute insert_point since we just shifted all offsets after the import.
+    m = re.search(r'(export\s+(?:async\s+)?function\s+writeIfChanged\s*\(\s*(\w+)[^)]*\)\s*\{)', c)
+    insert_point = m.end()
+    first_param = m.group(2)
+
+fs_mkdir_stmt = f"
+  require('fs').mkdirSync(path.dirname({first_param}), {{recursive: true}});"
+# This file is an ES module (import syntax already confirmed) -- use a
+# static fs import instead of require(), which won't exist here.
+if "import * as fs from 'node:fs'" in c:
+    fs_mkdir_stmt = f"
+  fs.mkdirSync(path.dirname({first_param}), {{recursive: true}});"
+elif "from 'node:fs/promises'" in c or 'from "node:fs/promises"' in c:
+    # Promise-based fs/promises has no sync mkdir -- add a second,
+    # dedicated sync fs import under a distinct name rather than
+    # touching the existing async import other code in this file relies on.
+    first_import_end = c.index('
+', c.index('import ')) + 1
+    c = c[:first_import_end] + "import {mkdirSync} from 'node:fs';
+" + c[first_import_end:]
+    m = re.search(r'(export\s+(?:async\s+)?function\s+writeIfChanged\s*\(\s*(\w+)[^)]*\)\s*\{)', c)
+    insert_point = m.end()
+    first_param = m.group(2)
+    fs_mkdir_stmt = f"
+  mkdirSync(path.dirname({first_param}), {{recursive: true}});"
+else:
+    print("WARN unrecognized fs import style -- left untouched, diagnostic will show real content")
+    raise SystemExit
+
+c = c[:insert_point] + fs_mkdir_stmt + c[insert_point:]
+with open(p, "w") as f:
+    f.write(c)
+print(f"OK patched write-if-changed.js to mkdir -p before writing (param: {first_param})")
+PYEOF
+fi
+
 # cpython3 linux-amd64 variant -- same real system-python symlink trick
 # that already fixed the separate third_party/cpython3/host path (19th
 # real failure fix) -- a different DEPS entry, same real fix.
@@ -546,26 +629,15 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 # Get direct evidence of its real command + real pinned source + a
 # direct run, same proven method as the 39th-42nd investigation, instead
 # of assuming it's the same import.meta.main bug without checking.
-# Safety-net diagnostic only now -- the sweep above should already have
-# fixed this if generate_css_js_files.js shares the same guard pattern.
-# Fixed from the 43rd failure's own run: using `&&` here meant the `ls`
-# on a not-yet-created directory (expected if the bug WASN'T fixed)
-# silently aborted the rest of the chain before it could dump the real
-# script source -- switched to `;` so each step runs regardless of the
-# previous one's exit code.
-( cd "$BUILD_ROOT/src" ; echo "=== kit CSS-to-JS: real ninja command ===" \
-    ; ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/card.css.js > /tmp/kit-cmd.txt 2>&1 \
-    ; cat /tmp/kit-cmd.txt \
-    ; echo "=== running it directly, bypassing ninja ===" \
-    ; ( cd out/Default && eval "$(tail -1 /tmp/kit-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
-    ; echo "=== does card.css.js exist now? ===" \
-    ; ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/ 2>&1 \
-    ; echo "=== extracting the generator script path from the command and dumping its real source ===" \
-    ; GEN_SCRIPT=$(grep -oE '[^ ]+/scripts/[^ ]+\.(mjs|js|py)' /tmp/kit-cmd.txt | head -1) \
-    ; echo "generator script: $GEN_SCRIPT" \
-    ; cat "$GEN_SCRIPT" 2>&1 \
-    | tee /tmp/kit-css-diagnostic.log ; true )
-
+# 2026-10-28 (Claude): removed the kit-CSS diagnostic block that lived
+# here -- found (same night, during the 45th fix) that it could never
+# have worked under this script's own `set -euo pipefail`: a failing
+# command inside a `;`-separated list still aborts the whole script
+# immediately under `-e`, same as `&&` would, so it died at the same
+# point either way. Real evidence for the 45th fix came from the main
+# build's own failure trace instead, which was sufficient -- no
+# diagnostic needed here now that the actual bug (write-if-changed.js
+# never creating its output directory) is already patched above.
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
 echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
