@@ -488,11 +488,22 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 # this specific pinned devtools-frontend revision. Building these exact
 # output files by path first forces ninja to resolve whatever action
 # produces them, in the correct order, before the main build needs them.
+# 2026-10-28 (Claude): 40th real failure -- the first attempt at this
+# preflight only pre-built 4 of the real 6 skill outputs. The actual error
+# (esbuild's own "Cannot read file" list against SkillRegistry.js's real
+# imports) named all 6 for this exact pinned devtools-frontend revision:
+# accessibility, network, performance, sources, storage, styling. (The
+# upstream "main" branch's BUILD.gn lists a DIFFERENT 6 -- swaps
+# accessibility for lighthouse -- because main is ahead of whatever
+# commit Chromium's DEPS pins here; same class of mismatch as the
+# esbuild-version bug. Trust the real build's own error, not upstream.)
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/accessibility.skill.js \
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/network.skill.js \
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/performance.skill.js \
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/sources.skill.js \
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/storage.skill.js \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js \
     2>&1 | tee /tmp/ai-skills-preflight.log || true )
 
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
