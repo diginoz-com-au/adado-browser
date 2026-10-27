@@ -521,7 +521,12 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
     && echo "=== searching whole tree for styling.skill.js by basename (wherever it really landed) ===" \
     && find out/Default -iname "styling.skill.js" 2>&1 \
     && echo "=== generate_skills action command (from ninja -t commands) ===" \
-    && ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js 2>&1 \
+    && ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js > /tmp/skill-cmd.txt 2>&1 \
+    && cat /tmp/skill-cmd.txt \
+    && echo "=== running that exact command directly (bypassing ninja) to see its real stdout/stderr/exit code ===" \
+    && ( cd out/Default && eval "$(tail -1 /tmp/skill-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
+    && echo "=== does the file exist now, after the direct run? ===" \
+    && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/ 2>&1 \
     | tee /tmp/skill-diagnostic.log || true )
 
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j1 \
