@@ -378,8 +378,26 @@ ln -sf "$(command -v gperf)" "$BUILD_ROOT/src/third_party/gperf/cipd/bin/gperf"
 # dependency). Write it only if actually missing, so a real future gclient
 # fix won't get silently clobbered.
 DTF_PKG="$BUILD_ROOT/src/third_party/devtools-frontend/src/package.json"
-if [ ! -f "$DTF_PKG" ]; then
-  mkdir -p "$(dirname "$DTF_PKG")"
+mkdir -p "$(dirname "$DTF_PKG")"
+if [ -f "$DTF_PKG" ]; then
+  # 2026-10-27 (Claude): 37th real failure -- the file already existed
+  # (DEPS pins an older devtools-frontend commit than the one I checked
+  # upstream, predating "type": "module" being added there), so the
+  # earlier if-missing-only fix silently skipped writing. Patch the
+  # existing file in place instead of assuming it is missing.
+  python3 - "$DTF_PKG" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        d = json.load(f)
+except Exception:
+    d = {}
+d["type"] = "module"
+with open(p, "w") as f:
+    json.dump(d, f)
+PYEOF
+else
   echo '{"type": "module"}' > "$DTF_PKG"
 fi
 
