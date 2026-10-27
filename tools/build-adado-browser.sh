@@ -494,54 +494,36 @@ if "mkdirSync" in c or "mkdir(" in c:
 # actually has.
 m = re.search(r'(export\s+(?:async\s+)?function\s+writeIfChanged\s*\(\s*(\w+)[^)]*\)\s*\{)', c)
 if not m:
-    print("WARN could not locate writeIfChanged's signature -- left untouched, diagnostic will show real content")
+    print("WARN could not locate writeIfChanged's signature -- left untouched")
     raise SystemExit
 
-sig, first_param = m.group(1), m.group(2)
+first_param = m.group(2)
 insert_point = m.end()
-mkdir_call = f"
-  if (typeof require !== 'undefined') {{}} // no-op guard
-  (await import('node:fs')).mkdirSync((await import('node:path')).dirname({first_param}), {{recursive: true}});"
-# Simpler: use static imports instead of dynamic ones, added once near top.
+
 if "from 'node:path'" not in c and 'from "node:path"' not in c:
-    # Insert a path import right after the first existing import line.
-    first_import_end = c.index('
-', c.index('import ')) + 1
-    c = c[:first_import_end] + "import * as path from 'node:path';
-" + c[first_import_end:]
-    # Recompute insert_point since we just shifted all offsets after the import.
+    first_import_end = c.index('\n', c.index('import ')) + 1
+    c = c[:first_import_end] + "import * as path from 'node:path';\n" + c[first_import_end:]
     m = re.search(r'(export\s+(?:async\s+)?function\s+writeIfChanged\s*\(\s*(\w+)[^)]*\)\s*\{)', c)
     insert_point = m.end()
     first_param = m.group(2)
 
-fs_mkdir_stmt = f"
-  require('fs').mkdirSync(path.dirname({first_param}), {{recursive: true}});"
-# This file is an ES module (import syntax already confirmed) -- use a
-# static fs import instead of require(), which won't exist here.
 if "import * as fs from 'node:fs'" in c:
-    fs_mkdir_stmt = f"
-  fs.mkdirSync(path.dirname({first_param}), {{recursive: true}});"
+    fs_mkdir_stmt = "\n  fs.mkdirSync(path.dirname(" + first_param + "), {recursive: true});"
 elif "from 'node:fs/promises'" in c or 'from "node:fs/promises"' in c:
-    # Promise-based fs/promises has no sync mkdir -- add a second,
-    # dedicated sync fs import under a distinct name rather than
-    # touching the existing async import other code in this file relies on.
-    first_import_end = c.index('
-', c.index('import ')) + 1
-    c = c[:first_import_end] + "import {mkdirSync} from 'node:fs';
-" + c[first_import_end:]
+    first_import_end = c.index('\n', c.index('import ')) + 1
+    c = c[:first_import_end] + "import {mkdirSync} from 'node:fs';\n" + c[first_import_end:]
     m = re.search(r'(export\s+(?:async\s+)?function\s+writeIfChanged\s*\(\s*(\w+)[^)]*\)\s*\{)', c)
     insert_point = m.end()
     first_param = m.group(2)
-    fs_mkdir_stmt = f"
-  mkdirSync(path.dirname({first_param}), {{recursive: true}});"
+    fs_mkdir_stmt = "\n  mkdirSync(path.dirname(" + first_param + "), {recursive: true});"
 else:
-    print("WARN unrecognized fs import style -- left untouched, diagnostic will show real content")
+    print("WARN unrecognized fs import style -- left untouched")
     raise SystemExit
 
 c = c[:insert_point] + fs_mkdir_stmt + c[insert_point:]
 with open(p, "w") as f:
     f.write(c)
-print(f"OK patched write-if-changed.js to mkdir -p before writing (param: {first_param})")
+print("OK patched write-if-changed.js to mkdir -p before writing (param: " + first_param + ")")
 PYEOF
 fi
 
