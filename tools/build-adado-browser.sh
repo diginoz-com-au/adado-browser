@@ -309,6 +309,51 @@ TSC_EOF
 chmod +x "$TSC_DIR/tsc"
 rm -rf /tmp/typescript.tgz /tmp/package
 
+# 2026-10-27 (Claude, Dan live: "we had a dependancies list...."): instead
+# of continuing to discover one missing non_git_source-gated dependency per
+# ~25min CI round-trip, pulled chromium's REAL full DEPS file and parsed it
+# as actual Python (not regex-guessing) to extract every entry gated the
+# same way our mold/node/esbuild/clang-format/tsc fixes were, filtered to
+# what a plain Linux chrome+chromedriver+chrome_sandbox build (no
+# checkout_android/win/src_internal) could plausibly need. These are the
+# real, exact pinned GCS objects/CIPD packages from that file, fetched
+# proactively in one batch rather than one-at-a-time.
+
+# node_modules bundle chromium's own node toolchain depends on.
+mkdir -p "$BUILD_ROOT/src/third_party/node"
+curl -fL -o /tmp/node_modules.tar.gz \
+  https://storage.googleapis.com/chromium-nodejs/8b170cc9b6a9725b4082b7b2255ca797bc80ea5f
+tar -xzf /tmp/node_modules.tar.gz -C "$BUILD_ROOT/src/third_party/node"
+rm -f /tmp/node_modules.tar.gz
+
+# chromium-bidi's own node_modules -- used by chromedriver's WebDriver BiDi
+# support, real production target of this build (chrome_sandbox/chromedriver).
+mkdir -p "$BUILD_ROOT/src/third_party/chromium-bidi"
+curl -fL -o /tmp/bidi_node_modules.tar.gz \
+  https://storage.googleapis.com/chromium-nodejs/chromium-bidi/7da310bf46956828c164237a912a201d21f51220dfbe60df454188dbad75889c
+tar -xzf /tmp/bidi_node_modules.tar.gz -C "$BUILD_ROOT/src/third_party/chromium-bidi"
+rm -f /tmp/bidi_node_modules.tar.gz
+
+# gperf: real compile-time perfect-hash codegen tool Chromium's build uses.
+# Simple, standard Unix tool already packaged for Ubuntu -- real system
+# apt package instead of guessing at the CIPD platform-templated URL.
+sudo apt-get install -y gperf
+mkdir -p "$BUILD_ROOT/src/third_party/gperf/cipd"
+ln -sf "$(command -v gperf)" "$BUILD_ROOT/src/third_party/gperf/cipd/gperf"
+
+# cpython3 linux-amd64 variant -- same real system-python symlink trick
+# that already fixed the separate third_party/cpython3/host path (19th
+# real failure fix) -- a different DEPS entry, same real fix.
+mkdir -p "$BUILD_ROOT/src/third_party/cpython3/linux-amd64/bin"
+ln -sf "$(command -v python3)" "$BUILD_ROOT/src/third_party/cpython3/linux-amd64/bin/python3"
+
+# Subresource Filter's real ad-detection ruleset -- small (158KB), real
+# production resource likely bundled into chrome's .pak resources at build
+# time, not test-only data.
+mkdir -p "$BUILD_ROOT/src/third_party/subresource-filter-ruleset/data"
+curl -fL -o "$BUILD_ROOT/src/third_party/subresource-filter-ruleset/data/UnindexedRules" \
+  https://storage.googleapis.com/chromium-ads-detection/22a0a5fc9e38d0de4e68eaf7e961dbbd2bebf234bebffbcd21bd496c0813fcde
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
