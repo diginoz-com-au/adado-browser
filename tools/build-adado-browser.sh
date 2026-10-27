@@ -344,6 +344,16 @@ curl -fL -o /tmp/typescript.tgz \
   https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz
 tar -xzf /tmp/typescript.tgz -C /tmp
 cp -r /tmp/package/lib/. "$TSC_DIR/"
+# 2026-10-28 (Claude): 47th real failure, surfaced only now that the
+# 46th fix got Node to the real pinned v24.12.0 -- tsc.js (CommonJS,
+# "module.exports = require(...)") was being loaded as an ES module
+# because node resolves "type" from the NEAREST package.json up the
+# tree, and the Chromium checkout's own root package.json declares
+# "type": "module". A local package.json right here overrides that for
+# this one vendored directory -- the standard, surgical Node fix for
+# shipping a CommonJS package inside an ESM-typed project, and it
+# doesn't require touching tsc.js itself or the wrapper below.
+echo '{"type": "commonjs"}' > "$TSC_DIR/package.json"
 cat > "$TSC_DIR/tsc" << TSC_EOF
 #!/bin/sh
 exec "$NODE_DIR/bin/node" "$TSC_DIR/tsc.js" "\$@"
