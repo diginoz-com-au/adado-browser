@@ -523,6 +523,26 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 # regardless of ninja ordering, parallelism, or preflight tricks -- none
 # of which could have fixed a script that does nothing when run. No
 # preflight workaround needed now that the real script actually runs.
+
+# 2026-10-28 (Claude): 43rd real failure -- a DIFFERENT devtools-frontend
+# generator (ui/kit's CSS-to-JS inlining for card/icon/link components)
+# hit the same symptom shape (esbuild "Cannot read file" on its outputs).
+# Get direct evidence of its real command + real pinned source + a
+# direct run, same proven method as the 39th-42nd investigation, instead
+# of assuming it's the same import.meta.main bug without checking.
+( cd "$BUILD_ROOT/src" && echo "=== kit CSS-to-JS: real ninja command ===" \
+    && ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/card.css.js > /tmp/kit-cmd.txt 2>&1 \
+    && cat /tmp/kit-cmd.txt \
+    && echo "=== running it directly, bypassing ninja ===" \
+    && ( cd out/Default && eval "$(tail -1 /tmp/kit-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
+    && echo "=== does card.css.js exist now? ===" \
+    && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/ 2>&1 \
+    && echo "=== extracting the generator script path from the command and dumping its real source ===" \
+    && GEN_SCRIPT=$(grep -oE '[^ ]+/scripts/[^ ]+\.(mjs|js|py)' /tmp/kit-cmd.txt | head -1) \
+    && echo "generator script: $GEN_SCRIPT" \
+    && cat "$GEN_SCRIPT" 2>&1 \
+    | tee /tmp/kit-css-diagnostic.log || true )
+
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
 echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
