@@ -506,6 +506,23 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
     gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js \
     2>&1 | tee /tmp/ai-skills-preflight.log || true )
 
+# 2026-10-28 (Claude): 41st real failure -- real log evidence (not a
+# guess) proved the 40th fix's preflight was necessary but not
+# sufficient. The ai_assistance:generate_skills action genuinely ran
+# TWICE: once in the preflight above (succeeded), then AGAIN inside the
+# main -j$JOBS parallel build moments before the esbuild bundle step
+# that consumes its output -- meaning BUILD.gn never declared the
+# generate_skills outputs as a real input dependency of the bundle
+# action, so ninja has no ordering guarantee between them at all. Under
+# high parallelism the bundle step's read can race the second,
+# redundant generate_skills run and lose. Building the bundle's own
+# OUTPUT here, serially, right after its skill-file inputs exist and
+# before the big parallel run starts, resolves and caches it so the
+# main build sees it already up to date and never re-races it.
+( cd "$BUILD_ROOT/src" && ninja -C out/Default -j1 \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/ai_assistance.js \
+    2>&1 | tee /tmp/ai-assistance-bundle-preflight.log || true )
+
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
 echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
