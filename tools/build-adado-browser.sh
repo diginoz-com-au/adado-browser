@@ -477,6 +477,24 @@ mkdir -p "$BUILD_ROOT/src/out/Default"
 cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 ( cd "$BUILD_ROOT/src" && ./tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles -j"$JOBS" -o out/Default/ )
 ( cd "$BUILD_ROOT/src" && ./out/Default/gn gen out/Default --fail-on-unused-args )
+
+# 2026-10-28 (Claude): 39th real failure -- esbuild tried to read 4
+# generated .skill.js files (devtools-frontend's AI-assistance panel,
+# front_end/models/ai_assistance/skills/) that didn't exist yet. Confirmed
+# via the real BUILD.gn: a real action_foreach("_generate_skills") target
+# genuinely produces them from .md sources via build_ai_skills.mjs -- this
+# isn't a missing fetch, it's ninja reaching the esbuild bundle step
+# before that generator action, a real dependency-graph ordering gap for
+# this specific pinned devtools-frontend revision. Building these exact
+# output files by path first forces ninja to resolve whatever action
+# produces them, in the correct order, before the main build needs them.
+( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/network.skill.js \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/performance.skill.js \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/sources.skill.js \
+    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/storage.skill.js \
+    2>&1 | tee /tmp/ai-skills-preflight.log || true )
+
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
 echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
