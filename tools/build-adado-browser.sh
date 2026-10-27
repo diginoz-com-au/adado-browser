@@ -259,13 +259,21 @@ rm -rf /tmp/node.tar.gz /tmp/node-v20.18.1-linux-x64
 # own nested DEPS, not chromium's top-level one -- same gclient-runhooks
 # gap). Real upstream esbuild binary via its official npm package
 # (platform-specific binary packages, same artifact `npm install esbuild`
-# would fetch) rather than guessing at devtools-frontend's exact pinned
-# CIPD version -- esbuild's CLI is stable enough across versions for a
-# build-time bundling step like this.
+# would fetch).
+#
+# 2026-10-27 (Claude): 38th real failure -- the "CLI is stable enough
+# across versions" assumption above was wrong. devtools-frontend's own
+# vendored node_modules (the separately-fetched chromium-bidi/chromium
+# node_modules tarballs) ship esbuild's JS host wrapper pinned to 0.25.1,
+# which refuses to drive a mismatched native binary: "Cannot start
+# service: Host version 0.25.1 does not match binary version 0.28.2".
+# The JS wrapper version isn't something this script controls (it comes
+# from the vendored node_modules tarball), so the real fix is fetching
+# the native binary at the SAME version the wrapper expects, not latest.
 ESBUILD_DIR="$BUILD_ROOT/src/third_party/devtools-frontend/src/third_party/esbuild"
 mkdir -p "$ESBUILD_DIR"
 curl -fL -o /tmp/esbuild.tgz \
-  https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.2.tgz
+  https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.1.tgz
 tar -xzf /tmp/esbuild.tgz -C /tmp
 cp /tmp/package/bin/esbuild "$ESBUILD_DIR/esbuild"
 chmod +x "$ESBUILD_DIR/esbuild"
