@@ -428,21 +428,37 @@ fi
 # guard is dead weight here -- patch it to call runMain()
 # unconditionally instead of upgrading the pinned Node (which every
 # other build tool in this tree also depends on; narrower is safer).
-AI_SKILLS_GEN="$BUILD_ROOT/src/third_party/devtools-frontend/src/scripts/build/build_ai_skills.mjs"
-if [ -f "$AI_SKILLS_GEN" ]; then
-  python3 - "$AI_SKILLS_GEN" <<'PYEOF'
-import sys
-p = sys.argv[1]
-with open(p) as f:
-    c = f.read()
+# 2026-10-28 (Claude): 43rd real failure -- a DIFFERENT devtools-frontend
+# generator (scripts/build/generate_css_js_files.js, for ui/kit's
+# CSS-to-JS inlining) hit the exact same shape: exits 0, writes nothing.
+# Confirmed via direct evidence (ran its real command outside ninja --
+# exit 0, target directory never even created). Given the SAME team
+# likely added this entry-point convention to multiple build scripts
+# around the same time, generalized the 42nd fix into a sweep of every
+# scripts/build/*.js and *.mjs file instead of patching one script per
+# failed build attempt as each one is discovered the hard way.
+DTF_BUILD_SCRIPTS="$BUILD_ROOT/src/third_party/devtools-frontend/src/scripts/build"
+if [ -d "$DTF_BUILD_SCRIPTS" ]; then
+  python3 - "$DTF_BUILD_SCRIPTS" <<'PYEOF'
+import sys, glob, os
+d = sys.argv[1]
 OLD = "if (import.meta.main) {\n  runMain();\n}"
-if OLD in c:
-    c = c.replace(OLD, "runMain();")
-    with open(p, "w") as f:
-        f.write(c)
-    print("OK patched build_ai_skills.mjs entry-point guard")
+patched = []
+for p in glob.glob(os.path.join(d, "*.js")) + glob.glob(os.path.join(d, "*.mjs")):
+    try:
+        with open(p) as f:
+            c = f.read()
+    except Exception:
+        continue
+    if OLD in c:
+        c = c.replace(OLD, "runMain();")
+        with open(p, "w") as f:
+            f.write(c)
+        patched.append(os.path.basename(p))
+if patched:
+    print("OK patched import.meta.main guard in:", ", ".join(patched))
 else:
-    print("WARN anchor not found -- script content differs from expected, leaving untouched")
+    print("WARN no scripts matched the known guard pattern -- nothing patched")
 PYEOF
 fi
 
@@ -530,18 +546,25 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 # Get direct evidence of its real command + real pinned source + a
 # direct run, same proven method as the 39th-42nd investigation, instead
 # of assuming it's the same import.meta.main bug without checking.
-( cd "$BUILD_ROOT/src" && echo "=== kit CSS-to-JS: real ninja command ===" \
-    && ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/card.css.js > /tmp/kit-cmd.txt 2>&1 \
-    && cat /tmp/kit-cmd.txt \
-    && echo "=== running it directly, bypassing ninja ===" \
-    && ( cd out/Default && eval "$(tail -1 /tmp/kit-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
-    && echo "=== does card.css.js exist now? ===" \
-    && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/ 2>&1 \
-    && echo "=== extracting the generator script path from the command and dumping its real source ===" \
-    && GEN_SCRIPT=$(grep -oE '[^ ]+/scripts/[^ ]+\.(mjs|js|py)' /tmp/kit-cmd.txt | head -1) \
-    && echo "generator script: $GEN_SCRIPT" \
-    && cat "$GEN_SCRIPT" 2>&1 \
-    | tee /tmp/kit-css-diagnostic.log || true )
+# Safety-net diagnostic only now -- the sweep above should already have
+# fixed this if generate_css_js_files.js shares the same guard pattern.
+# Fixed from the 43rd failure's own run: using `&&` here meant the `ls`
+# on a not-yet-created directory (expected if the bug WASN'T fixed)
+# silently aborted the rest of the chain before it could dump the real
+# script source -- switched to `;` so each step runs regardless of the
+# previous one's exit code.
+( cd "$BUILD_ROOT/src" ; echo "=== kit CSS-to-JS: real ninja command ===" \
+    ; ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/card.css.js > /tmp/kit-cmd.txt 2>&1 \
+    ; cat /tmp/kit-cmd.txt \
+    ; echo "=== running it directly, bypassing ninja ===" \
+    ; ( cd out/Default && eval "$(tail -1 /tmp/kit-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
+    ; echo "=== does card.css.js exist now? ===" \
+    ; ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/ui/kit/cards/ 2>&1 \
+    ; echo "=== extracting the generator script path from the command and dumping its real source ===" \
+    ; GEN_SCRIPT=$(grep -oE '[^ ]+/scripts/[^ ]+\.(mjs|js|py)' /tmp/kit-cmd.txt | head -1) \
+    ; echo "generator script: $GEN_SCRIPT" \
+    ; cat "$GEN_SCRIPT" 2>&1 \
+    | tee /tmp/kit-css-diagnostic.log ; true )
 
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
