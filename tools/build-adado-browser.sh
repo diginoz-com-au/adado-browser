@@ -409,6 +409,43 @@ else
   echo '{"type": "module"}' > "$DTF_PKG"
 fi
 
+# 2026-10-28 (Claude): 42nd real failure, finally ROOT-CAUSED with hard
+# evidence instead of guessing (3 diagnostic rounds: confirmed the
+# generate_skills action exits 0 and writes nothing, ruled out ninja
+# races/caching, then dumped the REAL pinned build_ai_skills.mjs source
+# straight from this checkout). Its entry-point guard is
+# `if (import.meta.main) { runMain(); }` -- import.meta.main is a VERY
+# recent Node.js addition. The Node binary this build fetches
+# (third_party/node) predates it, so `import.meta.main` is simply
+# undefined, the guard is false, runMain() NEVER RUNS, and the script
+# exits 0 having silently done nothing -- exactly matching every
+# symptom observed (success exit code, zero bytes written, identical
+# whether invoked via ninja, directly, or with any args). Same class of
+# bug as the esbuild-version mismatch (38th fix): a tool/runtime version
+# gap between what this pinned devtools-frontend commit's source expects
+# and what's actually available. This script is only ever invoked as a
+# CLI entry point by the GN action (never imported elsewhere), so the
+# guard is dead weight here -- patch it to call runMain()
+# unconditionally instead of upgrading the pinned Node (which every
+# other build tool in this tree also depends on; narrower is safer).
+AI_SKILLS_GEN="$BUILD_ROOT/src/third_party/devtools-frontend/src/scripts/build/build_ai_skills.mjs"
+if [ -f "$AI_SKILLS_GEN" ]; then
+  python3 - "$AI_SKILLS_GEN" <<'PYEOF'
+import sys
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+OLD = "if (import.meta.main) {\n  runMain();\n}"
+if OLD in c:
+    c = c.replace(OLD, "runMain();")
+    with open(p, "w") as f:
+        f.write(c)
+    print("OK patched build_ai_skills.mjs entry-point guard")
+else:
+    print("WARN anchor not found -- script content differs from expected, leaving untouched")
+PYEOF
+fi
+
 # cpython3 linux-amd64 variant -- same real system-python symlink trick
 # that already fixed the separate third_party/cpython3/host path (19th
 # real failure fix) -- a different DEPS entry, same real fix.
@@ -478,63 +515,14 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 ( cd "$BUILD_ROOT/src" && ./tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles -j"$JOBS" -o out/Default/ )
 ( cd "$BUILD_ROOT/src" && ./out/Default/gn gen out/Default --fail-on-unused-args )
 
-# 2026-10-28 (Claude): 39th real failure -- esbuild tried to read 4
-# generated .skill.js files (devtools-frontend's AI-assistance panel,
-# front_end/models/ai_assistance/skills/) that didn't exist yet. Confirmed
-# via the real BUILD.gn: a real action_foreach("_generate_skills") target
-# genuinely produces them from .md sources via build_ai_skills.mjs -- this
-# isn't a missing fetch, it's ninja reaching the esbuild bundle step
-# before that generator action, a real dependency-graph ordering gap for
-# this specific pinned devtools-frontend revision. Building these exact
-# output files by path first forces ninja to resolve whatever action
-# produces them, in the correct order, before the main build needs them.
-# 2026-10-28 (Claude): 40th real failure -- the first attempt at this
-# preflight only pre-built 4 of the real 6 skill outputs. The actual error
-# (esbuild's own "Cannot read file" list against SkillRegistry.js's real
-# imports) named all 6 for this exact pinned devtools-frontend revision:
-# accessibility, network, performance, sources, storage, styling. (The
-# upstream "main" branch's BUILD.gn lists a DIFFERENT 6 -- swaps
-# accessibility for lighthouse -- because main is ahead of whatever
-# commit Chromium's DEPS pins here; same class of mismatch as the
-# esbuild-version bug. Trust the real build's own error, not upstream.)
-( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/accessibility.skill.js \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/network.skill.js \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/performance.skill.js \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/sources.skill.js \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/storage.skill.js \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js \
-    2>&1 | tee /tmp/ai-skills-preflight.log || true )
-
-# 2026-10-28 (Claude): the 41st fix's own -j1 preflight of
-# ai_assistance.js ALSO failed with the identical "cannot read file"
-# error, immediately after generate_skills reported success again --
-# ruling out a parallelism race entirely. Something more fundamental is
-# wrong: either generate_skills never writes real content to the exact
-# path ninja/esbuild expect, or it writes somewhere else. Stop guessing
-# at fixes blind -- get direct, unambiguous evidence of what this
-# action actually produced and where, before trying another fix.
-( cd "$BUILD_ROOT/src" && echo "=== skills dir after generate_skills preflight ===" \
-    && find out/Default/gen/third_party/devtools-frontend -iname "*.skill.js" -o -iname "SkillRegistry.js" 2>&1 \
-    && echo "=== full listing of the expected skills directory ===" \
-    && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/ 2>&1 \
-    && echo "=== searching whole tree for styling.skill.js by basename (wherever it really landed) ===" \
-    && find out/Default -iname "styling.skill.js" 2>&1 \
-    && echo "=== generate_skills action command (from ninja -t commands) ===" \
-    && ninja -C out/Default -t commands gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/styling.skill.js > /tmp/skill-cmd.txt 2>&1 \
-    && cat /tmp/skill-cmd.txt \
-    && echo "=== running that exact command directly (bypassing ninja) to see its real stdout/stderr/exit code ===" \
-    && ( cd out/Default && eval "$(tail -1 /tmp/skill-cmd.txt)"; echo "DIRECT RUN EXIT CODE: $?" ) \
-    && echo "=== does the file exist now, after the direct run? ===" \
-    && ls -la out/Default/gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/skills/ 2>&1 \
-    && echo "=== the REAL pinned build_ai_skills.mjs source, straight from this exact checkout ===" \
-    && cat third_party/devtools-frontend/src/scripts/build/build_ai_skills.mjs 2>&1 \
-    | tee /tmp/skill-diagnostic.log || true )
-
-( cd "$BUILD_ROOT/src" && ninja -C out/Default -j1 \
-    gen/third_party/devtools-frontend/src/front_end/models/ai_assistance/ai_assistance.js \
-    2>&1 | tee /tmp/ai-assistance-bundle-preflight.log || true )
-
+# 2026-10-28 (Claude): 39th-41st real failures were all symptoms of the
+# SAME root cause, finally fixed at the source above (see the
+# build_ai_skills.mjs patch near the DTF_PKG fix): that generator's
+# import.meta.main entry-point guard silently no-oped under this build's
+# older pinned Node, so it always exited 0 having written nothing,
+# regardless of ninja ordering, parallelism, or preflight tricks -- none
+# of which could have fixed a script that does nothing when run. No
+# preflight workaround needed now that the real script actually runs.
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
 echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
