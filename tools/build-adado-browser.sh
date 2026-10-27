@@ -434,6 +434,44 @@ curl -fL -o "$BUILD_ROOT/src/third_party/subresource-filter-ruleset/data/Unindex
   -c "$BUILD_ROOT/domsubcache.tar.gz" \
   "$BUILD_ROOT/src"
 
+# 2026-10-28 (Claude, Dan live: "theres gotta be more you can do to stop
+# v2 having any more retrys... seems like its still all just missing
+# dependencies that should have been predicted and pre-installed"). Fast
+# preflight check (seconds, not the 45-90 minutes a real ninja build takes
+# to reach and reveal a missing dependency) -- verifies every dependency
+# this script itself is responsible for fetching actually landed where
+# expected, and fails immediately with a clear table if not. This can
+# only catch dependencies THIS SCRIPT knows about (every one found so far
+# across 38 real fix rounds) -- it cannot predict a brand-new, not-yet-
+# discovered gap, but it turns "wait an hour to find out" into "find out
+# in seconds" for every known category.
+echo "[preflight] verifying all known dependencies landed..."
+PREFLIGHT_FAIL=0
+check() {
+  if [ -e "$1" ]; then
+    echo "  OK   $1"
+  else
+    echo "  MISS $1"
+    PREFLIGHT_FAIL=1
+  fi
+}
+check "$BUILD_ROOT/src/buildtools/third_party/mold/cipd/mold"
+check "$BUILD_ROOT/src/third_party/node/linux/node-linux-x64/bin/node"
+check "$BUILD_ROOT/src/third_party/devtools-frontend/src/third_party/esbuild/esbuild"
+check "$BUILD_ROOT/src/buildtools/linux64-format/clang-format"
+check "$BUILD_ROOT/src/third_party/typescript/linux-amd64/src/lib/tsc"
+check "$BUILD_ROOT/src/third_party/node/node_modules"
+check "$BUILD_ROOT/src/third_party/chromium-bidi/node_modules"
+check "$BUILD_ROOT/src/third_party/gperf/cipd/bin/gperf"
+check "$BUILD_ROOT/src/third_party/cpython3/linux-amd64/bin/python3"
+check "$BUILD_ROOT/src/third_party/subresource-filter-ruleset/data/UnindexedRules"
+check "$BUILD_ROOT/src/third_party/devtools-frontend/src/package.json"
+if [ "$PREFLIGHT_FAIL" -eq 1 ]; then
+  echo "[preflight] FAILED -- one or more known dependencies missing before the real build even started."
+  exit 1
+fi
+echo "[preflight] all known dependencies present, proceeding to the real build."
+
 # 5. GN + build
 mkdir -p "$BUILD_ROOT/src/out/Default"
 cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
