@@ -305,7 +305,12 @@ mkdir -p "$TSC_DIR"
 # curl never received the URL at all ("curl: no URL specified"). Moved
 # the comment above the whole curl statement instead of inside it.
 curl -fL -o /tmp/typescript.tgz \
-  https://registry.npmjs.org/typescript/-/typescript-5.6.3.tgz
+  # 2026-10-27 (Claude): 32nd real failure -- 5.6.3 is also missing some
+  # newer lib/*.d.ts files (lib.es2017.arraybuffer.d.ts, added in TS 5.7).
+  # Using the latest real 5.x (5.9.2, 102 lib .d.ts files -- the most
+  # complete classic-lib-format release) to minimize the odds of hitting
+  # yet another missing-lib-file round.
+  https://registry.npmjs.org/typescript/-/typescript-5.9.2.tgz
 tar -xzf /tmp/typescript.tgz -C /tmp
 cp -r /tmp/package/lib/. "$TSC_DIR/"
 cat > "$TSC_DIR/tsc" << TSC_EOF
