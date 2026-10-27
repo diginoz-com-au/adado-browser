@@ -292,13 +292,19 @@ chmod +x "$CLANG_FORMAT_DIR/clang-format"
 # pattern real npm-installed `tsc` uses (a shebang shim calling node).
 TSC_DIR="$BUILD_ROOT/src/third_party/typescript/linux-amd64/src/lib"
 mkdir -p "$TSC_DIR"
+# 2026-10-27 (Claude): 30th real failure -- TypeScript 7.x turned out
+# to be a totally different package (the new Go-based "tsgo" compiler
+# line) with almost no lib/*.d.ts files at all -- real npm tarball
+# check confirmed only 1 .d.ts in the whole package vs the ~93 a
+# classic 5.x release ships (lib.decorators.d.ts included). Chromium's
+# build expects the classic lib set; pinned to a known-good 5.x.
+# 2026-10-27 (Claude): 31st real failure -- the comment block above was
+# ACCIDENTALLY INSERTED BETWEEN the backslash line-continuation and the
+# real URL below in the previous patch. In bash, a `#` on a continued
+# line starts a comment that swallows the rest of that logical line --
+# curl never received the URL at all ("curl: no URL specified"). Moved
+# the comment above the whole curl statement instead of inside it.
 curl -fL -o /tmp/typescript.tgz \
-  # 2026-10-27 (Claude): 30th real failure -- TypeScript 7.x turned out
-  # to be a totally different package (the new Go-based "tsgo" compiler
-  # line) with almost no lib/*.d.ts files at all -- real npm tarball
-  # check confirmed only 1 .d.ts in the whole package vs the ~93 a
-  # classic 5.x release ships (lib.decorators.d.ts included). Chromium's
-  # build expects the classic lib set; pinned to a known-good 5.x.
   https://registry.npmjs.org/typescript/-/typescript-5.6.3.tgz
 tar -xzf /tmp/typescript.tgz -C /tmp
 cp -r /tmp/package/lib/. "$TSC_DIR/"
