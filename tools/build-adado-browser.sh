@@ -271,6 +271,18 @@ cp /tmp/package/bin/esbuild "$ESBUILD_DIR/esbuild"
 chmod +x "$ESBUILD_DIR/esbuild"
 rm -rf /tmp/esbuild.tgz /tmp/package
 
+# 2026-10-27 (Claude): 28th real failure -- buildtools/linux64-format/
+# clang-format missing, same gclient-runhooks gap. This one's a GCS (not
+# CIPD) dependency with a real pinned SHA256 in DEPS -- unlike mold/node/
+# esbuild (where a "close enough" recent upstream release was fine), this
+# fetches the EXACT pinned binary Chromium's own DEPS references, since
+# the real URL and checksum are known and verifiable.
+CLANG_FORMAT_DIR="$BUILD_ROOT/src/buildtools/linux64-format"
+mkdir -p "$CLANG_FORMAT_DIR"
+curl -fL -o "$CLANG_FORMAT_DIR/clang-format" \
+  https://chromium-clang-format.storage.googleapis.com/5d384f2a3e72f01c5c61dd07e3a2577723cfa20c8c019131467f00fb6da8a75c
+chmod +x "$CLANG_FORMAT_DIR/clang-format"
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
