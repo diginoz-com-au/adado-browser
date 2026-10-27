@@ -367,6 +367,22 @@ sudo apt-get install -y gperf
 mkdir -p "$BUILD_ROOT/src/third_party/gperf/cipd/bin"
 ln -sf "$(command -v gperf)" "$BUILD_ROOT/src/third_party/gperf/cipd/bin/gperf"
 
+# 2026-10-27 (Claude): 36th real failure -- devtools-frontend's own real
+# generator scripts (e.g. front_end/core/i18n/generate-locales-js.js) use
+# ES-module `import` syntax, which Node only honours if the nearest
+# package.json up the tree says "type": "module". The real upstream repo
+# (chromium.googlesource.com/devtools/devtools-frontend) ships exactly that
+# at its root -- confirmed by fetching it directly -- but it's missing from
+# our synced tree (same non_git_source DEPS-hook-skipping class as every
+# other gap fixed this session, just narrower: one file, not a whole
+# dependency). Write it only if actually missing, so a real future gclient
+# fix won't get silently clobbered.
+DTF_PKG="$BUILD_ROOT/src/third_party/devtools-frontend/src/package.json"
+if [ ! -f "$DTF_PKG" ]; then
+  mkdir -p "$(dirname "$DTF_PKG")"
+  echo '{"type": "module"}' > "$DTF_PKG"
+fi
+
 # cpython3 linux-amd64 variant -- same real system-python symlink trick
 # that already fixed the separate third_party/cpython3/host path (19th
 # real failure fix) -- a different DEPS entry, same real fix.
