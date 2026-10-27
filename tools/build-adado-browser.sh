@@ -254,6 +254,23 @@ cp -r /tmp/node-v20.18.1-linux-x64/. "$NODE_DIR/"
 chmod +x "$NODE_DIR/bin/node"
 rm -rf /tmp/node.tar.gz /tmp/node-v20.18.1-linux-x64
 
+# 2026-10-27 (Claude): 27th real failure -- same class again, one layer
+# deeper: devtools-frontend/src/third_party/esbuild/esbuild missing (its
+# own nested DEPS, not chromium's top-level one -- same gclient-runhooks
+# gap). Real upstream esbuild binary via its official npm package
+# (platform-specific binary packages, same artifact `npm install esbuild`
+# would fetch) rather than guessing at devtools-frontend's exact pinned
+# CIPD version -- esbuild's CLI is stable enough across versions for a
+# build-time bundling step like this.
+ESBUILD_DIR="$BUILD_ROOT/src/third_party/devtools-frontend/src/third_party/esbuild"
+mkdir -p "$ESBUILD_DIR"
+curl -fL -o /tmp/esbuild.tgz \
+  https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.2.tgz
+tar -xzf /tmp/esbuild.tgz -C /tmp
+cp /tmp/package/bin/esbuild "$ESBUILD_DIR/esbuild"
+chmod +x "$ESBUILD_DIR/esbuild"
+rm -rf /tmp/esbuild.tgz /tmp/package
+
 # 3. Apply the FULL patch series -- upstream ungoogled-chromium patches
 #    PLUS our patches/extra/adado-branding/* (appended to patches/series,
 #    applies last, on top of upstream's own search-engine-replacement patch)
