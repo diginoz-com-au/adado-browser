@@ -315,8 +315,15 @@ mkdir -p "$TSC_DIR"
 # checking this specific pattern before pushing). Verified EVERY curl
 # block in this file has its URL on the very next line after fixing this
 # one -- see the grep check in the commit this change ships with.
+# 2026-10-27 (Claude): 34th real failure -- 5.9.2 is STILL missing some
+# files (lib.es2025.collection.d.ts, from TS 6.0). Using real stable
+# 6.0.3 -- confirmed classic lib format (110 lib/*.d.ts files, not the
+# broken 7.x tsgo line), has both lib.decorators.d.ts AND the es2025
+# files. This is the newest real classic-format release; if a future
+# round still finds a missing lib file, there is no newer classic
+# version to fall back to -- would need a different real fix.
 curl -fL -o /tmp/typescript.tgz \
-  https://registry.npmjs.org/typescript/-/typescript-5.9.2.tgz
+  https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz
 tar -xzf /tmp/typescript.tgz -C /tmp
 cp -r /tmp/package/lib/. "$TSC_DIR/"
 cat > "$TSC_DIR/tsc" << TSC_EOF
