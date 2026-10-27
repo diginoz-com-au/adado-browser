@@ -304,12 +304,18 @@ mkdir -p "$TSC_DIR"
 # line starts a comment that swallows the rest of that logical line --
 # curl never received the URL at all ("curl: no URL specified"). Moved
 # the comment above the whole curl statement instead of inside it.
+# 2026-10-27 (Claude): 32nd real failure -- 5.6.3 is also missing some
+# newer lib/*.d.ts files (lib.es2017.arraybuffer.d.ts, added in TS 5.7).
+# Using the latest real 5.x (5.9.2, 102 lib .d.ts files -- the most
+# complete classic-lib-format release) to minimize the odds of hitting
+# yet another missing-lib-file round.
+# 2026-10-27 (Claude): 33rd real failure -- made the EXACT SAME bug AGAIN
+# (comment block landed between the backslash continuation and the real
+# URL -- same root cause as the 31st fix, just reintroduced by not
+# checking this specific pattern before pushing). Verified EVERY curl
+# block in this file has its URL on the very next line after fixing this
+# one -- see the grep check in the commit this change ships with.
 curl -fL -o /tmp/typescript.tgz \
-  # 2026-10-27 (Claude): 32nd real failure -- 5.6.3 is also missing some
-  # newer lib/*.d.ts files (lib.es2017.arraybuffer.d.ts, added in TS 5.7).
-  # Using the latest real 5.x (5.9.2, 102 lib .d.ts files -- the most
-  # complete classic-lib-format release) to minimize the odds of hitting
-  # yet another missing-lib-file round.
   https://registry.npmjs.org/typescript/-/typescript-5.9.2.tgz
 tar -xzf /tmp/typescript.tgz -C /tmp
 cp -r /tmp/package/lib/. "$TSC_DIR/"
