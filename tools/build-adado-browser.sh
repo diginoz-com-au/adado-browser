@@ -572,10 +572,8 @@ import sys
 p = sys.argv[1]
 with open(p) as f:
     c = f.read()
-OLD = "template.innerHTML =
-        (this.constructor as typeof CustomElement).template || emptyHTML();"
-NEW = "template.innerHTML =
-        ((this.constructor as typeof CustomElement).template || emptyHTML()) as string;"
+OLD = "template.innerHTML =\n        (this.constructor as typeof CustomElement).template || emptyHTML();"
+NEW = "template.innerHTML =\n        ((this.constructor as typeof CustomElement).template || emptyHTML()) as string;"
 if OLD in c:
     c = c.replace(OLD, NEW)
     with open(p, "w") as f:
