@@ -1023,6 +1023,7 @@ NINJA_LOG="$BUILD_ROOT/ninja-build.log"
 NINJA_TARGETS=(chrome chromedriver chrome_sandbox)
 MAX_NINJA_ATTEMPTS=6
 attempt=1
+PREV_ERROR_SIGNATURE=""
 while true; do
   echo "[adado-browser] ninja attempt $attempt/$MAX_NINJA_ATTEMPTS"
   if ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" "${NINJA_TARGETS[@]}" 2>&1 | tee "$NINJA_LOG" ); then
@@ -1033,6 +1034,36 @@ while true; do
     echo "[adado-browser] ninja still failing after $MAX_NINJA_ATTEMPTS attempts -- giving up, see $NINJA_LOG above for the real remaining error."
     exit 1
   fi
+  # 2026-10-29 (Claude): real failure confirmed across 6 identical
+  # attempts in run 40714407953 -- localized_link.ts kept reporting "2
+  # cast(s)" applied on EVERY retry (both the source tree AND the gen/
+  # copy), yet tsc's error output (8 errors: downstream DOM-element
+  # variables in getAriaLabelledContent_/setContainerInnerHtml_ typed as
+  # "string") was byte-identical attempt to attempt -- the cast was never
+  # actually reaching the file tsc compiles, despite the sweep genuinely
+  # re-finding and re-applying it every single round. Root mechanism not
+  # confirmed (no live runner access to inspect mid-build state), but the
+  # symptom is unambiguous: a direct edit to the gen/ copy is not
+  # surviving to the tsc invocation. Rather than keep guessing why,
+  # sidestep it: if this attempt's error signature for a file exactly
+  # matches last attempt's, force ninja to regenerate that file's
+  # preprocessed/tsc outputs from scratch (delete them) so it goes
+  # through ninja's own build graph from the freshly-re-swept source,
+  # instead of trusting a direct gen/ edit to persist.
+  CURRENT_ERROR_SIGNATURE=$(grep -E "error TS[0-9]+:" "$NINJA_LOG" | sort)
+  if [ -n "$PREV_ERROR_SIGNATURE" ] && [ "$CURRENT_ERROR_SIGNATURE" = "$PREV_ERROR_SIGNATURE" ]; then
+    echo "[adado-browser] STUCK: tsc error output is byte-identical to the previous attempt -- no real progress despite sweep(s) reporting casts applied. Forcing regeneration of affected gen/ outputs instead of trusting direct edits to persist."
+    echo "$CURRENT_ERROR_SIGNATURE" | grep -oE '^[^ ]+\.ts' | sort -u | while read -r stale_ts; do
+      stale_component_dir=$(dirname "$(dirname "$stale_ts")")
+      stale_abs="$BUILD_ROOT/src/out/Default/$stale_component_dir"
+      if [ -d "$stale_abs" ]; then
+        echo "[adado-browser]   force-regenerating: $stale_abs (preprocessed/ + tsc/ outputs)"
+        find "$stale_abs" -maxdepth 1 \( -name preprocessed -o -name '*.ts' \) -exec rm -rf {} +
+        find "$BUILD_ROOT/src/out/Default/gen/ui/webui/resources/tsc" -maxdepth 3 -type d -path "*$(basename "$stale_component_dir")" -exec rm -rf {} + 2>/dev/null || true
+      fi
+    done
+  fi
+  PREV_ERROR_SIGNATURE="$CURRENT_ERROR_SIGNATURE"
   # Re-sweep the real source tree (covers any files the pre-sweep missed
   # because they weren't synced yet) AND the build's own gen/ output dirs
   # (covers files synthesized mid-build, e.g. html-wrapper .ts files that
