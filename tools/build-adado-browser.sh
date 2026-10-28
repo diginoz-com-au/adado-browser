@@ -858,3 +858,66 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
 
 echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
+
+# 2026-10-28 (Claude, Dan live: "how are you not able to anticipate and
+# get ahead of the surely predictable failures"): fair challenge -- fixed
+# the real PROCESS, not just the next bug. Every failure so far (49th
+# through 52nd fixes) has been the exact same shape: a real .innerHTML
+# assignment from a TrustedHTML-returning call (getTrustedHTML`...`,
+# sanitizeInnerHtml(...), window.trustedTypes!.emptyHTML) that TypeScript
+# 6.0.3 won't narrow to plain string -- discovered one ninja target at a
+# time because tsc only checks the target currently being compiled, not
+# the whole tree up front. Rather than keep hand-picking files as tsc
+# reaches them, this sweeps the REAL checked-out ui/webui/resources tree
+# for every occurrence of the pattern and casts all of them in one pass,
+# including ones tsc hasn't reached yet. `as unknown as string` is used
+# uniformly (not `as string`) because it's a safe no-op even on
+# already-valid plain-string assignments -- no need to distinguish the
+# union-vs-pure-TrustedHTML cases by regex.
+WEBUI_RESOURCES_ROOT="$BUILD_ROOT/src/ui/webui/resources"
+if [ -d "$WEBUI_RESOURCES_ROOT" ]; then
+  python3 - "$WEBUI_RESOURCES_ROOT" <<'PYEOF'
+import sys, re, os
+root = sys.argv[1]
+# Matches: X.innerHTML = <expr>; where <expr> ends with a getTrustedHTML
+# template literal, a sanitizeInnerHtml(...) call, or the known
+# window.trustedTypes!.emptyHTML property read -- the three real shapes
+# confirmed across the 49th-52nd fixes. Skips anything already cast
+# (contains "as string" or "as unknown as string" right before the ';').
+PATTERNS = [
+    re.compile(r"(\.innerHTML\s*=\s*getTrustedHTML`[^`]*`)(;)"),
+    re.compile(r"(\.innerHTML\s*=\s*sanitizeInnerHtml\(.*?\))(;)", re.DOTALL),
+    re.compile(r"(\.innerHTML\s*=\s*window\.trustedTypes!\.emptyHTML)(;)"),
+]
+total_files = 0
+total_casts = 0
+for dirpath, _, filenames in os.walk(root):
+    for fname in filenames:
+        if not fname.endswith(".ts"):
+            continue
+        fpath = os.path.join(dirpath, fname)
+        try:
+            with open(fpath, encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            continue
+        original = content
+        file_casts = 0
+        for pattern in PATTERNS:
+            def _cast(m):
+                nonlocal_marker = m.group(1)
+                if nonlocal_marker.rstrip().endswith(("as string", "as unknown as string")):
+                    return m.group(0)
+                return m.group(1) + " as unknown as string" + m.group(2)
+            new_content, n = pattern.subn(_cast, content)
+            content = new_content
+            file_casts += n
+        if file_casts:
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
+            total_files += 1
+            total_casts += file_casts
+            print(f"OK swept {os.path.relpath(fpath, root)}: {file_casts} cast(s)")
+print(f"SWEEP COMPLETE: {total_casts} total casts across {total_files} files")
+PYEOF
+fi
