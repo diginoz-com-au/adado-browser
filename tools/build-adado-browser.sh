@@ -663,6 +663,38 @@ else:
 PYEOF
 fi
 
+# 2026-10-28 (Claude): 51st real failure -- same TrustedHTML class, two
+# more real call sites in localized_link.ts (both go through
+# sanitizeInnerHtml(), which returns plain TrustedHTML, not a string
+# union -- same as the 50th fix's cr_a11y_announcer.ts case, so the same
+# `as unknown as string` double-cast applies, not a direct `as string`).
+LOCALIZED_LINK_TS="$BUILD_ROOT/src/ui/webui/resources/cr_components/localized_link/localized_link.ts"
+if [ -f "$LOCALIZED_LINK_TS" ]; then
+  python3 - "$LOCALIZED_LINK_TS" <<'PYEOF'
+import sys, re
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+# Matches both real call sites (one single-line, one multi-line) --
+# non-greedy up to the first `;` that closes the assignment statement;
+# sanitizeInnerHtml()'s own arguments (object/array literals) never
+# contain a literal semicolon, so this safely spans the multi-line case.
+pattern = re.compile(r"(\.innerHTML = sanitizeInnerHtml\(.*?\))(;)", re.DOTALL)
+count = 0
+def _cast(m):
+    global count
+    count += 1
+    return m.group(1) + " as unknown as string" + m.group(2)
+c2 = pattern.sub(_cast, c)
+if count:
+    with open(p, "w") as f:
+        f.write(c2)
+    print(f"OK patched localized_link.ts: cast {count} sanitizeInnerHtml innerHTML assignment(s)")
+else:
+    print("WARN anchor not found -- localized_link.ts content differs from expected, leaving untouched")
+PYEOF
+fi
+
 # 2026-10-28 (Claude, Dan live: "i dont think youve done 49 failed runs
 # all missing dependencies... went 2 days installing them one at a time
 # instead of doing what i said [find them all up front]"). Real, fair
