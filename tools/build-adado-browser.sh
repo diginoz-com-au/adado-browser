@@ -584,6 +584,38 @@ else:
 PYEOF
 fi
 
+# 2026-10-28 (Claude, Dan live: "i dont think youve done 49 failed runs
+# all missing dependencies... went 2 days installing them one at a time
+# instead of doing what i said [find them all up front]"). Real, fair
+# criticism -- checked honestly: the preflight check only ever grew to
+# 11 entries, confirming nothing close to a full upfront sweep actually
+# happened. Did it properly this time: fetched the REAL DEPS file for
+# this exact pinned Chromium tag (154.0.8037.57, not "main"), parsed it
+# as an AST (not regex-guessing), and evaluated every condition string
+# against our EXACT real gclient config (target_os=["linux"],
+# custom_vars={"non_git_source": True}, host_os=linux/x64) -- not a
+# fuzzy keyword filter. Found 65 real conditionally-gated entries (close
+# to the "52" remembered) -- full reproducible analysis committed at
+# tools/deps-analysis/. Most of the gap turned out to be Android/
+# ChromeOS/test-infra/perf-test packages chrome+chromedriver+
+# chrome_sandbox's own ninja build graph never actually needs (updater,
+# luci-go, resultdb, skia_goldctl, checkstyle, java-format tools,
+# meet_effects test data, etc.) -- blindly fetching all 65 would waste
+# real time/disk on things that were never going to be needed, exactly
+# the kind of unverified-guess shortcut the whole night has been trying
+# to avoid. One stood out as a real, untested, same-class risk:
+# screen-ai (Chrome's PDF OCR/accessibility feature), gated
+# 'checkout_linux and non_git_source' -- identical pattern to every one
+# of the 49 failures already hit. Fetched proactively via depot_tools'
+# own cipd client directly (not gclient's runhooks -- that mechanism is
+# the confirmed-unreliable one across this whole file; cipd itself,
+# called directly, hasn't been tried before now).
+SCREEN_AI_DIR="$BUILD_ROOT/src/third_party/screen-ai/linux"
+mkdir -p "$SCREEN_AI_DIR"
+cipd ensure -root "$SCREEN_AI_DIR" -ensure-file - <<'CIPD_EOF' || true
+chromium/third_party/screen-ai/linux version:153.01
+CIPD_EOF
+
 # cpython3 linux-amd64 variant -- same real system-python symlink trick
 # that already fixed the separate third_party/cpython3/host path (19th
 # real failure fix) -- a different DEPS entry, same real fix.
@@ -641,6 +673,7 @@ check "$BUILD_ROOT/src/third_party/gperf/cipd/bin/gperf"
 check "$BUILD_ROOT/src/third_party/cpython3/linux-amd64/bin/python3"
 check "$BUILD_ROOT/src/third_party/subresource-filter-ruleset/data/UnindexedRules"
 check "$BUILD_ROOT/src/third_party/devtools-frontend/src/package.json"
+check "$BUILD_ROOT/src/third_party/screen-ai/linux"
 if [ "$PREFLIGHT_FAIL" -eq 1 ]; then
   echo "[preflight] FAILED -- one or more known dependencies missing before the real build even started."
   exit 1
