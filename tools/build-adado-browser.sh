@@ -547,6 +547,45 @@ print("OK patched write-if-changed.js to mkdir -p before writing (param: " + fir
 PYEOF
 fi
 
+# 2026-10-28 (Claude): 49th real failure -- surfaced only now that tsc
+# genuinely runs (the 47th fix's ESM/CJS patch worked): a REAL TypeScript
+# type error in Chromium's own ui/webui/resources/js/custom_element.ts,
+# not a build-tooling bug. Confirmed via the real upstream source
+# (template.innerHTML = (this.constructor as typeof CustomElement).template
+# || emptyHTML();) -- TypeScript 6.0.3's DOM lib types Element.innerHTML's
+# accepted value as `string | TrustedHTML`, and whatever `.template` /
+# emptyHTML() resolve to here is apparently typed as that same union,
+# which 6.0.3's checker now correctly flags as not narrowable to a bare
+# `string` in this assignment context. Rather than gamble on yet another
+# TypeScript version (already went through 4 rounds, 5.6.3->5.9.2->6.0.3,
+# to get the classic lib .d.ts files chromium's build actually needs --
+# there's no newer classic-format release to fall back to if this picks a
+# new problem), cast at the one real call site instead -- safe: the
+# runtime behavior is unchanged (Element.innerHTML's setter has always
+# accepted a TrustedHTML value; this only affects compile-time type
+# checking), and it's the same file-patch pattern already used
+# successfully all night for pinned-vs-main source mismatches.
+CUSTOM_ELEMENT_TS="$BUILD_ROOT/src/ui/webui/resources/js/custom_element.ts"
+if [ -f "$CUSTOM_ELEMENT_TS" ]; then
+  python3 - "$CUSTOM_ELEMENT_TS" <<'PYEOF'
+import sys
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+OLD = "template.innerHTML =
+        (this.constructor as typeof CustomElement).template || emptyHTML();"
+NEW = "template.innerHTML =
+        ((this.constructor as typeof CustomElement).template || emptyHTML()) as string;"
+if OLD in c:
+    c = c.replace(OLD, NEW)
+    with open(p, "w") as f:
+        f.write(c)
+    print("OK patched custom_element.ts's innerHTML assignment with an explicit cast")
+else:
+    print("WARN anchor not found -- custom_element.ts content differs from expected, leaving untouched")
+PYEOF
+fi
+
 # cpython3 linux-amd64 variant -- same real system-python symlink trick
 # that already fixed the separate third_party/cpython3/host path (19th
 # real failure fix) -- a different DEPS entry, same real fix.
