@@ -584,6 +584,85 @@ else:
 PYEOF
 fi
 
+# 2026-10-28 (Claude): 50th real failure -- the SAME TrustedHTML/DOM-lib
+# strictness class as the 49th fix (custom_element.ts), just three more
+# real call sites tsc hadn't reached yet because the build dies on first
+# compile. All three are real, confirmed against the actual upstream
+# source at the exact reported lines -- not generated/gen/ copies (those
+# are build output mirrors of these same real source files).
+CR_A11Y_TS="$BUILD_ROOT/src/ui/webui/resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer.ts"
+if [ -f "$CR_A11Y_TS" ]; then
+  python3 - "$CR_A11Y_TS" <<'PYEOF'
+import sys
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+# window.trustedTypes!.emptyHTML types as plain TrustedHTML here (not a
+# string union like the 49th fix's case) -- TS refuses a direct `as
+# string` between two non-overlapping types, so this goes through
+# `unknown` first. Runtime behavior is unchanged either way.
+OLD = "messagesDiv.innerHTML = window.trustedTypes!.emptyHTML;"
+NEW = "messagesDiv.innerHTML = window.trustedTypes!.emptyHTML as unknown as string;"
+if OLD in c:
+    c = c.replace(OLD, NEW)
+    with open(p, "w") as f:
+        f.write(c)
+    print("OK patched cr_a11y_announcer.ts's innerHTML assignment with an explicit cast")
+else:
+    print("WARN anchor not found -- cr_a11y_announcer.ts content differs from expected, leaving untouched")
+PYEOF
+fi
+
+CR_TOAST_TS="$BUILD_ROOT/src/ui/webui/resources/cr_elements/cr_toast/cr_toast_manager.ts"
+if [ -f "$CR_TOAST_TS" ]; then
+  python3 - "$CR_TOAST_TS" <<'PYEOF'
+import sys
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+# this.$.slotted.hidden types as `string | boolean` (the HTMLElement
+# .hidden attribute's real DOM-lib type); the return type here is
+# `boolean`, and `boolean` is one arm of that union, so a direct `as
+# boolean` cast is sufficient (same kind of narrowing as the 49th fix).
+OLD = "return this.$.slotted.hidden;"
+NEW = "return this.$.slotted.hidden as boolean;"
+if OLD in c:
+    c = c.replace(OLD, NEW)
+    with open(p, "w") as f:
+        f.write(c)
+    print("OK patched cr_toast_manager.ts's hidden getter with an explicit cast")
+else:
+    print("WARN anchor not found -- cr_toast_manager.ts content differs from expected, leaving untouched")
+PYEOF
+fi
+
+ICONS_HTML_TS="$BUILD_ROOT/src/ui/webui/resources/cr_elements/icons.html.ts"
+if [ -f "$ICONS_HTML_TS" ]; then
+  python3 - "$ICONS_HTML_TS" <<'PYEOF'
+import sys, re
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+# Two occurrences of the exact same `string | TrustedHTML` union pattern
+# as the 49th fix (getTrustedHTML`...` template literal assigned to
+# .innerHTML) -- same direct `as string` cast is valid since `string` is
+# one arm of the union here too.
+pattern = re.compile(r"(div\.innerHTML = getTrustedHTML`[^`]*`)(;)")
+count = 0
+def _cast(m):
+    global count
+    count += 1
+    return m.group(1) + " as string" + m.group(2)
+c2 = pattern.sub(_cast, c)
+if count:
+    with open(p, "w") as f:
+        f.write(c2)
+    print(f"OK patched icons.html.ts: cast {count} getTrustedHTML innerHTML assignment(s)")
+else:
+    print("WARN anchor not found -- icons.html.ts content differs from expected, leaving untouched")
+PYEOF
+fi
+
 # 2026-10-28 (Claude, Dan live: "i dont think youve done 49 failed runs
 # all missing dependencies... went 2 days installing them one at a time
 # instead of doing what i said [find them all up front]"). Real, fair
