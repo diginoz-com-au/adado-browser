@@ -855,10 +855,6 @@ cp "$REPO_ROOT/flags.gn" "$BUILD_ROOT/src/out/Default/args.gn"
 # build's own failure trace instead, which was sufficient -- no
 # diagnostic needed here now that the actual bug (write-if-changed.js
 # never creating its output directory) is already patched above.
-( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" chrome chromedriver chrome_sandbox )
-
-echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
-
 # 2026-10-28 (Claude, Dan live: "how are you not able to anticipate and
 # get ahead of the surely predictable failures"): fair challenge -- fixed
 # the real PROCESS, not just the next bug. Every failure so far (49th
@@ -867,23 +863,46 @@ echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
 # sanitizeInnerHtml(...), window.trustedTypes!.emptyHTML) that TypeScript
 # 6.0.3 won't narrow to plain string -- discovered one ninja target at a
 # time because tsc only checks the target currently being compiled, not
-# the whole tree up front. Rather than keep hand-picking files as tsc
-# reaches them, this sweeps the REAL checked-out ui/webui/resources tree
-# for every occurrence of the pattern and casts all of them in one pass,
-# including ones tsc hasn't reached yet. `as unknown as string` is used
-# uniformly (not `as string`) because it's a safe no-op even on
-# already-valid plain-string assignments -- no need to distinguish the
-# union-vs-pure-TrustedHTML cases by regex.
-WEBUI_RESOURCES_ROOT="$BUILD_ROOT/src/ui/webui/resources"
-if [ -d "$WEBUI_RESOURCES_ROOT" ]; then
-  python3 - "$WEBUI_RESOURCES_ROOT" <<'PYEOF'
+# the whole tree up front.
+#
+# 2026-10-28 (Claude, ~1hr after the 53rd "tree-wide sweep" fix, run
+# 40702736903 failed again on files this sweep's OWN COMMENT says it
+# should have caught -- cr_a11y_announcer.ts:91 is literally
+# `messagesDiv.innerHTML = window.trustedTypes!.emptyHTML;`, an exact
+# match for the pattern below): root cause was NOT a missing pattern.
+# This whole sweep used to be positioned AFTER the `ninja` build command.
+# Under `set -euo pipefail`, when ninja fails -- which is exactly what a
+# TrustedHTML error does -- the script aborts right there via `-e` and
+# NEVER REACHES the sweep code at all. The sweep had never once actually
+# executed since it was written; it wasn't wrong, it was dead code in the
+# wrong position. Moved to run BEFORE `gn gen`/`ninja` below, so it
+# unconditionally runs on every build before anything can fail past it.
+#
+# Second, separate real gap closed here: some of the files that need
+# casting (e.g. cr_elements/icons.html.ts) are HTML-wrapper files
+# SYNTHESIZED by the build itself (Chromium's preprocess_if_expr +
+# html-to-wrapper generation, confirmed by reading
+# ui/webui/resources/tools/build_webui.gni) -- they do not exist as .ts
+# files in the real checked-out source tree AT ALL, so no amount of
+# sweeping the source tree before the build can ever reach them; they
+# are only materialized mid-build, inside ninja's own gen/ output dirs.
+# A static pre-sweep architecturally cannot cover these. Fixed with a
+# second layer: `run_trusted_html_sweep` also runs INSIDE a retry loop
+# around ninja -- when ninja fails, the build's own gen/ output
+# directories (now populated, however far the build got) are swept too,
+# then ninja is re-run (incremental, so this resumes rather than
+# restarts). Bounded to 6 attempts; gives up loudly with the real ninja
+# output if a round makes zero progress (no new casts applied), rather
+# than looping forever on a genuinely different failure.
+run_trusted_html_sweep() {
+  local root="$1"
+  if [ ! -d "$root" ]; then
+    echo "0"
+    return 0
+  fi
+  python3 - "$root" <<'PYEOF'
 import sys, re, os
 root = sys.argv[1]
-# Matches: X.innerHTML = <expr>; where <expr> ends with a getTrustedHTML
-# template literal, a sanitizeInnerHtml(...) call, or the known
-# window.trustedTypes!.emptyHTML property read -- the three real shapes
-# confirmed across the 49th-52nd fixes. Skips anything already cast
-# (contains "as string" or "as unknown as string" right before the ';').
 PATTERNS = [
     re.compile(r"(\.innerHTML\s*=\s*getTrustedHTML`[^`]*`)(;)"),
     re.compile(r"(\.innerHTML\s*=\s*sanitizeInnerHtml\(.*?\))(;)", re.DOTALL),
@@ -901,12 +920,11 @@ for dirpath, _, filenames in os.walk(root):
                 content = f.read()
         except Exception:
             continue
-        original = content
         file_casts = 0
         for pattern in PATTERNS:
             def _cast(m):
-                nonlocal_marker = m.group(1)
-                if nonlocal_marker.rstrip().endswith(("as string", "as unknown as string")):
+                marker = m.group(1)
+                if marker.rstrip().endswith(("as string", "as unknown as string")):
                     return m.group(0)
                 return m.group(1) + " as unknown as string" + m.group(2)
             new_content, n = pattern.subn(_cast, content)
@@ -917,7 +935,119 @@ for dirpath, _, filenames in os.walk(root):
                 f.write(content)
             total_files += 1
             total_casts += file_casts
-            print(f"OK swept {os.path.relpath(fpath, root)}: {file_casts} cast(s)")
-print(f"SWEEP COMPLETE: {total_casts} total casts across {total_files} files")
+            print(f"OK swept {os.path.relpath(fpath, root)}: {file_casts} cast(s)", file=sys.stderr)
+print(total_casts)
 PYEOF
-fi
+}
+
+# Generic second layer: reads ninja/tsc's OWN precise file:line:col +
+# "Type 'X' is not assignable to type 'Y'" output and casts exactly the
+# reported assignment to `as unknown as <Y>` -- not limited to the 3
+# known TrustedHTML shapes above. This is what catches genuinely NEW
+# error shapes (e.g. a `string | boolean` not assignable to `boolean`,
+# hit for the first time in run 40702736903 at
+# cr_toast_manager.ts -- a real source line, not yet one of the 3 known
+# RHS patterns) without needing a new hardcoded regex for every variant.
+run_tsc_error_autofix() {
+  local ninja_log="$1"
+  python3 - "$ninja_log" <<'PYEOF'
+import sys, re
+
+log_path = sys.argv[1]
+with open(log_path, encoding="utf-8", errors="replace") as f:
+    log = f.read()
+
+# e.g. "gen/ui/webui/resources/cr_elements/preprocessed/cr_toast/cr_toast_manager.ts:64:5 - error TS2322: Type 'string | boolean' is not assignable to type 'boolean'."
+pattern = re.compile(
+    r"^(?P<file>\S+\.ts):(?P<line>\d+):(?P<col>\d+) - error TS2322: "
+    r"Type '.*?' is not assignable to type '(?P<expected>[^']+)'\.$",
+    re.MULTILINE,
+)
+fixed = 0
+by_file = {}
+for m in pattern.finditer(log):
+    by_file.setdefault(m.group("file"), []).append((int(m.group("line")), m.group("expected")))
+
+for fpath, entries in by_file.items():
+    try:
+        with open(fpath, encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as exc:
+        print(f"SKIP {fpath}: {exc}", file=sys.stderr)
+        continue
+    changed = False
+    for lineno, expected in entries:
+        idx = lineno - 1
+        if idx < 0 or idx >= len(lines):
+            continue
+        line = lines[idx]
+        if " as unknown as " in line:
+            continue  # already cast, don't double-cast
+        # Wrap the WHOLE right-hand expression in parens before casting,
+        # not just insert "as unknown as X" before the trailing ';'.
+        # Confirmed by local test before this was ever pushed to CI:
+        # TypeScript's `as` binds TIGHTER than most binary operators, so
+        # for e.g. `x = a || b;`, inserting the cast at the end produces
+        # `x = a || b as unknown as boolean;`, which TS parses as
+        # `a || (b as unknown as boolean)` -- NOT casting the whole
+        # expression, silently failing to fix the real error. Finding the
+        # real assignment '=' (not ==, !=, <=, >=, =>) and parenthesizing
+        # everything after it up to the trailing ';' makes the cast bind
+        # to the entire RHS regardless of what operators it contains.
+        stripped = line.rstrip("\n")
+        eq_match = re.search(r"(?<![=!<>])=(?!=|>)\s*", stripped)
+        if eq_match and stripped.rstrip().endswith(";"):
+            rhs_start = eq_match.end()
+            rhs = stripped[rhs_start:-1].rstrip()
+            new_line = stripped[:rhs_start] + f"({rhs}) as unknown as {expected};\n"
+            lines[idx] = new_line
+            changed = True
+            fixed += 1
+            print(f"OK autofixed {fpath}:{lineno} -> cast to {expected}", file=sys.stderr)
+    if changed:
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+print(fixed)
+PYEOF
+}
+
+# 5b. Pre-sweep the real checked-out source tree before anything can
+# fail past it (see the long comment above for why this must run here,
+# not after ninja).
+WEBUI_RESOURCES_ROOT="$BUILD_ROOT/src/ui/webui/resources"
+PRESWEPT=$(run_trusted_html_sweep "$WEBUI_RESOURCES_ROOT")
+echo "[adado-browser] Pre-build TrustedHTML sweep: $PRESWEPT cast(s) applied"
+
+NINJA_LOG="$BUILD_ROOT/ninja-build.log"
+NINJA_TARGETS=(chrome chromedriver chrome_sandbox)
+MAX_NINJA_ATTEMPTS=6
+attempt=1
+while true; do
+  echo "[adado-browser] ninja attempt $attempt/$MAX_NINJA_ATTEMPTS"
+  if ( cd "$BUILD_ROOT/src" && ninja -C out/Default -j"$JOBS" "${NINJA_TARGETS[@]}" 2>&1 | tee "$NINJA_LOG" ); then
+    echo "[adado-browser] ninja succeeded on attempt $attempt"
+    break
+  fi
+  if [ "$attempt" -ge "$MAX_NINJA_ATTEMPTS" ]; then
+    echo "[adado-browser] ninja still failing after $MAX_NINJA_ATTEMPTS attempts -- giving up, see $NINJA_LOG above for the real remaining error."
+    exit 1
+  fi
+  # Re-sweep the real source tree (covers any files the pre-sweep missed
+  # because they weren't synced yet) AND the build's own gen/ output dirs
+  # (covers files synthesized mid-build, e.g. html-wrapper .ts files that
+  # don't exist in source at all), then apply the generic tsc-error
+  # autofix for anything neither sweep's 3 known patterns cover.
+  SWEPT_SRC=$(run_trusted_html_sweep "$WEBUI_RESOURCES_ROOT")
+  SWEPT_GEN=$(run_trusted_html_sweep "$BUILD_ROOT/src/out/Default/gen/ui/webui/resources")
+  AUTOFIXED=$(run_tsc_error_autofix "$NINJA_LOG")
+  TOTAL_FIXED=$((SWEPT_SRC + SWEPT_GEN + AUTOFIXED))
+  echo "[adado-browser] retry sweep: src=$SWEPT_SRC gen=$SWEPT_GEN autofix=$AUTOFIXED (total $TOTAL_FIXED)"
+  if [ "$TOTAL_FIXED" -eq 0 ]; then
+    echo "[adado-browser] no TrustedHTML/TS2322-shaped fix applied this round -- this is a genuinely different failure, not more of the same class. Stopping rather than looping blindly; see $NINJA_LOG above."
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+done
+
+echo "[adado-browser] Build complete: $BUILD_ROOT/src/out/Default/chrome"
